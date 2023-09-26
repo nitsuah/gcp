@@ -24,3 +24,30 @@ if credentials and credentials.valid:
     print("Authentication successful.")
 else:
     print("Authentication failed.")
+
+# Create a Google Drive API service object
+service = build('drive', 'v3', credentials=credentials)
+
+# Specify the source folder ID (replace with your folder ID)
+folder_id = os.environ.get('GOOGLE_DRIVE_FOLDER_ID')
+
+# Define a function to count files and folders
+def count_files_and_folders(folder_id):
+    query = f"'{folder_id}' in parents"
+    results = service.files().list(q=query).execute()
+    files = results.get('files', [])
+    num_files = len(files)
+
+    query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
+    results = service.files().list(q=query).execute()
+    folders = results.get('files', [])
+    num_folders = len(folders)
+
+    return num_files, num_folders
+
+# Get the count for the specified folder
+num_files, num_folders = count_files_and_folders(folder_id)
+
+# Print the results
+print(f"Number of Files: {num_files}")
+print(f"Number of Folders: {num_folders}")
