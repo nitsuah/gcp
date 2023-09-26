@@ -1,4 +1,5 @@
 import os
+import csv
 from google.oauth2 import credentials
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -19,16 +20,16 @@ flow = InstalledAppFlow.from_client_secrets_file(client_id_file, SCOPES)
 # Authenticate and authorize the user
 credentials = flow.run_local_server()
 
-# Check if credentials contain access token
+# Check if credentials are valid
 if credentials and credentials.valid:
-    print("Authentication successful.")
+    pass
 else:
     print("Authentication failed.")
 
 # Create a Google Drive API service object
 service = build('drive', 'v3', credentials=credentials)
 
-# Specify the source folder ID (replace with your folder ID)
+# Specify the source folder ID
 folder_id = os.environ.get('GOOGLE_DRIVE_FOLDER_ID')
 
 # Define a function to count files and folders
@@ -48,6 +49,11 @@ def count_files_and_folders(folder_id):
 # Get the count for the specified folder
 num_files, num_folders = count_files_and_folders(folder_id)
 
-# Print the results
-print(f"Number of Files: {num_files}")
-print(f"Number of Folders: {num_folders}")
+# Write the results to a CSV file
+csv_file = './outputs/folder_count.csv'
+with open(csv_file, 'w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(['Number of Files', num_files])
+    writer.writerow(['Number of Folders', num_folders])
+
+print(f"Results have been saved to '{csv_file}'")
