@@ -40,7 +40,7 @@ destination_folder_id = os.environ.get('GOOGLE_DRIVE_DESTINATION_FOLDER_ID')
 
 # Define a function to count files and folders
 def count_files_and_folders(folder_id):
-    query = f"'{folder_id}' in parents"
+    query = f"'{folder_id}' in parents and mimeType != 'application/vnd.google-apps.folder'"
     results = service.files().list(q=query).execute()
     files = results.get('files', [])
     num_files = len(files)
@@ -129,9 +129,11 @@ num_files, num_folders = count_files_and_folders(source_folder_id)
 # Write the results to a CSV file
 csv_file = './outputs/assessment-1.csv'
 with open(csv_file, 'w', newline='') as file:
+    # Get the name of the source folder
+    source_folder_name = service.files().get(fileId=source_folder_id, fields='name').execute()
     writer = csv.writer(file)
-    writer.writerow(['Number of Files', num_files])
-    writer.writerow(['Number of Folders', num_folders])
+    writer.writerow(['Folder Name','Number of Files', 'Number of Folders'])
+    writer.writerow([source_folder_name['name'], num_files , num_folders])
 
 # Copy the top-level source folder to the provided destination folder
 source_folder_metadata = service.files().get(fileId=source_folder_id, fields='name').execute()
@@ -172,7 +174,7 @@ with open(csv_file, 'w', newline='') as file:
     writer.writerow(['Destination Folder Name', 'Number of Files', 'Number of Folders', 'Number of Child Folders'])
 
     # Add the top-level folder to the CSV
-    writer.writerow([destination_folder_metadata['name'], num_files, num_folders, count_child_objects(new_folder['id'])])
+    writer.writerow([destination_folder_metadata['name'],  num_files - num_folders , num_folders, count_child_objects(new_folder['id'])])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
