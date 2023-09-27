@@ -84,7 +84,6 @@ def copy_child_objects(source_folder_id, destination_folder_id):
         for file in files:
             file_metadata = {'name': file['name'], 'parents': [destination_folder_id]}
             service.files().copy(fileId=file['id'], body=file_metadata).execute()
-            writer.writerow([file['name'], 'File', 'Copied'])
 
     except Exception as e:
         print(f"An error occurred while copying files: {str(e)}")
@@ -92,13 +91,12 @@ def copy_child_objects(source_folder_id, destination_folder_id):
     query = f"'{source_folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
     results = service.files().list(q=query).execute()
     folders = results.get('files', [])
-
+    
     try:
         # Recursively copy child objects to the destination folder
         for folder in folders:
             folder_metadata = {'name': folder['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
             new_folder = service.files().create(body=folder_metadata, fields='id').execute()
-            writer.writerow([folder['name'], 'Folder', 'Copied'])
             copy_child_objects(folder['id'], new_folder['id'])
 
     except Exception as e:
@@ -117,11 +115,9 @@ with open(csv_file, 'w', newline='') as file:
 
 # Write the child object count to a CSV file
 csv_file = './outputs/assessment-2.csv'
-
 with open(csv_file, 'w', newline='') as file:
     writer = csv.writer(file)
     writer.writerow(['Folder Name', 'Number of Files', 'Number of Folders', 'Number of Child Folders'])
-    with open('./outputs/copy_log.csv', 'w', newline='') as log_file:
-        log_writer = csv.writer(log_file)
-        num_child_folders = count_child_objects(source_folder_id)
-        writer.writerow(['Total Nested Folders', '', '', num_child_folders])
+    num_child_folders = count_child_objects(source_folder_id)
+    writer.writerow(['Total Nested Folders', '', '', num_child_folders])
+    writer.writerow(['Total Folders', '', '', num_folders + num_child_folders])
