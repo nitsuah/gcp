@@ -3,6 +3,7 @@ import csv
 from google.oauth2 import credentials
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.errors import HttpError
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive',
@@ -63,8 +64,8 @@ def copy_child_objects(source_folder_id, destination_folder_id):
             file_metadata = {'name': file['name'], 'parents': [destination_folder_id]}
             service.files().copy(fileId=file['id'], body=file_metadata).execute()
 
-    except Exception as e:
-        print(f"An error occurred while copying files: {str(e)}")
+    except HttpError as e:
+        handle_copy_error(file['name'], e)
 
     query = f"'{source_folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
     results = service.files().list(q=query).execute()
@@ -74,11 +75,30 @@ def copy_child_objects(source_folder_id, destination_folder_id):
         # Recursively copy child objects to the destination folder
         for folder in folders:
             folder_metadata = {'name': folder['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
-            new_folder = service.files().create(body=folder_metadata, fields='id').execute()
+            new_folder = service.files().create(body=folder_metadata, fields='id, name').execute()
             copy_child_objects(folder['id'], new_folder['id'])  # Pass new folder's ID
 
-    except Exception as e:
-        print(f"An error occurred while copying folders: {str(e)}")
+    except HttpError as e:
+        handle_copy_error(folder['name'], e)
+
+# Define a function to handle copy errors
+def handle_copy_error(file_or_folder_name, error):
+    print(f"ERROR: {file_or_folder_name}: {error}")
+    
+    # If the error is related to copying a file, try to retrieve its parent folder(s)
+    if isinstance(error, HttpError) and 'fileId' in error.__dict__:
+        file_id = error.__dict__['fileId']
+        try:
+            # Retrieve the file's metadata to get parent folder(s)
+            file_metadata = service.files().get(fileId=file_id, fields='parents').execute()
+            parent_folder_ids = file_metadata.get('parents', [])
+            
+            # Construct URLs to the parent folders based on their IDs
+            for folder_id in parent_folder_ids:
+                folder_url = f'https://drive.google.com/drive/folders/{folder_id}'
+                print(f'Parent Folder URL: {folder_url}')
+        except Exception as e:
+            print(f"ERROR-PARENT: {e}")
 
 # Define a function to count child objects recursively
 def count_child_objects(folder_id):
@@ -107,8 +127,9 @@ with open(csv_file, 'w', newline='') as file:
     writer.writerow(['Number of Folders', num_folders])
 
 # Copy the top-level source folder to the provided destination folder
-file_metadata = {'name': source_folder_id, 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
-new_folder = service.files().create(body=file_metadata, fields='id').execute()
+source_folder_metadata = service.files().get(fileId=source_folder_id, fields='name').execute()
+destination_folder_metadata = {'name': source_folder_metadata['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
+new_folder = service.files().create(body=destination_folder_metadata, fields='id, name').execute()
 
 # Copy child objects (including nested folders) to the new top-level folder
 copy_child_objects(source_folder_id, new_folder['id'])
@@ -120,7 +141,7 @@ with open(csv_file, 'w', newline='') as file:
     writer.writerow(['Folder Name', 'Number of Files', 'Number of Folders', 'Number of Child Folders'])
 
     # Add the top-level folder to the CSV
-    writer.writerow([source_folder_id, num_files, num_folders, count_child_objects(new_folder['id'])])
+    writer.writerow([source_folder_metadata['name'], num_files, num_folders, count_child_objects(new_folder['id'])])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
