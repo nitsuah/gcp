@@ -46,14 +46,39 @@ def count_files_and_folders(folder_id):
 
     return num_files, num_folders
 
+# Define a function to count child objects recursively
+def count_child_objects(folder_id):
+    query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
+    results = service.files().list(q=query).execute()
+    folders = results.get('files', [])
+    num_folders = len(folders)
+
+    # Recursively count child objects for each top-level folder
+    for folder in folders:
+        folder_id = folder['id']
+        child_files, child_folders = count_files_and_folders(folder_id)
+        num_child_folders = count_child_objects(folder_id)
+        num_folders += num_child_folders
+        writer.writerow([folder['name'], child_files, child_folders, num_child_folders])
+
+    return num_folders
+
 # Get the count for the specified folder
 num_files, num_folders = count_files_and_folders(folder_id)
 
 # Write the results to a CSV file
-csv_file = './outputs/folder_count.csv'
+csv_file = './outputs/assessment-1.csv'
 with open(csv_file, 'w', newline='') as file:
     writer = csv.writer(file)
     writer.writerow(['Number of Files', num_files])
     writer.writerow(['Number of Folders', num_folders])
 
-print(f"Results have been saved to '{csv_file}'")
+# Write the child object count to a CSV file
+csv_file = './outputs/assessment-2.csv'
+with open(csv_file, 'w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(['Folder Name', 'Number of Files', 'Number of Folders', 'Number of Child Folders'])
+    num_child_folders = count_child_objects(folder_id)
+    writer.writerow(['Total Nested Folders', '', '', num_child_folders])
+
+print(f"Results have been saved to ./outputs/...")
