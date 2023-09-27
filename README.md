@@ -9,6 +9,7 @@
 ## Setup local environment
 
 -- sudo apt-get update
+-- sudo apt-get install python3
 -- sudo apt-get install python3-pip
 -- sudo pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
 -- export GOOGLE_DRIVE_FOLDER_ID='your-folder-id'
