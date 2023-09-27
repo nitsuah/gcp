@@ -14,7 +14,7 @@
 ## Setup local environment
 
 - [Create Repo](https://github.com/nitsuah/gcp)
-- Local dev setup (see below)
+- Local dev setup (see below, but I used wsl)
 
 ```bash
 sudo apt-get update
@@ -30,4 +30,4 @@ export GOOGLE_DRIVE_CLIENT_ID_FILE='/your/path/to/client_id.json'
 
 - [![Assessment-1](https://badgen.net/badge/assessment-1/DONE/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-1.csv)
 - [![Assessment-2](https://badgen.net/badge/assessment-2/DONE/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-2.csv)
-- [![Assessment-3](https://badgen.net/badge/assessment-2/DONE/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-3.csv)
+- [![Assessment-3](https://badgen.net/badge/assessment-3/DONE/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-3.csv)
