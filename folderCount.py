@@ -83,8 +83,6 @@ def copy_child_objects(source_folder_id, destination_folder_id):
 
 # Define a function to handle copy errors
 def handle_copy_error(file_or_folder_name, error):
-    print(f"ERROR: {file_or_folder_name}: {error}")
-    
     # If the error is related to copying a file, try to retrieve its parent folder(s)
     if isinstance(error, HttpError) and 'fileId' in error.__dict__:
         file_id = error.__dict__['fileId']
@@ -99,6 +97,15 @@ def handle_copy_error(file_or_folder_name, error):
                 print(f'Parent Folder URL: {folder_url}')
         except Exception as e:
             print(f"ERROR-PARENT: {e}")
+
+        # Write the error to a log file
+        with open('./outputs/error.log', 'a') as log_file:
+            log_file.write(f"ERROR: {file_or_folder_name}: {error}\n")
+            
+        # Write the error to a CSV file
+        with open('./outputs/errors.csv', 'a', newline='') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow([file_or_folder_name, error])
 
 # Define a function to count child objects recursively
 def count_child_objects(folder_id):
@@ -154,3 +161,29 @@ with open(csv_file, 'w', newline='') as file:
             add_child_folders(folder_id)
 
     add_child_folders(new_folder['id'])
+
+# Count child objects in destination folder
+count_child_objects(destination_folder_id)
+
+# Write the child object count in destination to a CSV file
+csv_file = './outputs/assessment-3.csv'
+with open(csv_file, 'w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(['Destination Folder Name', 'Number of Files', 'Number of Folders', 'Number of Child Folders'])
+
+    # Add the top-level folder to the CSV
+    writer.writerow([destination_folder_metadata['name'], num_files, num_folders, count_child_objects(new_folder['id'])])
+
+    # Recursively add child folders to the CSV
+    def add_child_folders(folder_id):
+        query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
+        results = service.files().list(q=query).execute()
+        folders = results.get('files', [])
+        for folder in folders:
+            folder_id = folder['id']
+            writer.writerow([folder['name'], count_files_and_folders(folder_id)[0], count_files_and_folders(folder_id)[1], count_child_objects(folder_id)])
+            add_child_folders(folder_id)
+
+    add_child_folders(new_folder['id'])
+
+print("COPY COMPLETED!")
