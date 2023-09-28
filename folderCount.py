@@ -13,6 +13,12 @@ SCOPES = [
 # Read client ID JSON file path from the environment variable
 client_id_file = os.environ.get('GOOGLE_DRIVE_CLIENT_ID_FILE')
 
+# Specify the source folder ID
+source_folder_id = os.environ.get('GOOGLE_DRIVE_SOURCE_FOLDER_ID')
+
+# Specify the destination folder ID
+destination_folder_id = os.environ.get('GOOGLE_DRIVE_DESTINATION_FOLDER_ID')
+
 # Check if the environment variable is set
 if not client_id_file:
     raise ValueError("Missing environment variable for Google Drive API Client ID JSON file.")
@@ -31,12 +37,6 @@ else:
 
 # Create a Google Drive API service object
 service = build('drive', 'v3', credentials=credentials)
-
-# Specify the source folder ID
-source_folder_id = os.environ.get('GOOGLE_DRIVE_SOURCE_FOLDER_ID')
-
-# Specify the destination folder ID
-destination_folder_id = os.environ.get('GOOGLE_DRIVE_DESTINATION_FOLDER_ID')
 
 # Define a function to count files and folders
 def count_files_and_folders(folder_id):
@@ -101,11 +101,6 @@ def handle_copy_error(file_or_folder_name, error):
         # Write the error to a log file
         with open('./outputs/error.log', 'a') as log_file:
             log_file.write(f"ERROR: {file_or_folder_name}: {error}\n")
-            
-        # Write the error to a CSV file
-        with open('./outputs/errors.csv', 'a', newline='') as csv_file:
-            writer = csv.writer(csv_file)
-            writer.writerow([file_or_folder_name, error])
 
 # Define a function to count child objects recursively
 def count_child_objects(folder_id):
@@ -135,13 +130,16 @@ with open(csv_file, 'w', newline='') as file:
     writer.writerow(['Folder Name','Number of Files', 'Number of Folders'])
     writer.writerow([source_folder_name['name'], num_files , num_folders])
 
-# Copy the top-level source folder to the provided destination folder
+print("STARTING COPY...")
+# Copy the top-level source folder to the provided destination folder - TODO Copy all child objects not top-level source folder
 source_folder_metadata = service.files().get(fileId=source_folder_id, fields='name').execute()
 destination_folder_metadata = {'name': source_folder_metadata['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
 new_folder = service.files().create(body=destination_folder_metadata, fields='id, name').execute()
 
 # Copy child objects (including nested folders) to the new top-level folder
 copy_child_objects(source_folder_id, new_folder['id'])
+print("COPY COMPLETED!")
+print("STARTING ASSESSMENTS...")
 
 # Write the child object count to a CSV file
 csv_file = './outputs/assessment-2.csv'
@@ -174,7 +172,7 @@ with open(csv_file, 'w', newline='') as file:
     writer.writerow(['Destination Folder Name', 'Number of Files', 'Number of Folders', 'Number of Child Folders'])
 
     # Add the top-level folder to the CSV
-    writer.writerow([destination_folder_metadata['name'],  num_files - num_folders , num_folders, count_child_objects(new_folder['id'])])
+    writer.writerow([destination_folder_metadata['name'],  num_files, num_folders, count_child_objects(new_folder['id'])])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
@@ -188,4 +186,4 @@ with open(csv_file, 'w', newline='') as file:
 
     add_child_folders(new_folder['id'])
 
-print("COPY COMPLETED!")
+print("ASSESSMENTS COMPLETED!")
