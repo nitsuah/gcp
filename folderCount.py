@@ -130,6 +130,7 @@ with open(csv_file, 'w', newline='') as file:
     writer.writerow(['Folder Name','Number of Files', 'Number of Folders'])
     writer.writerow([source_folder_name['name'], num_files , num_folders])
 
+print("STARTING COPY...")
 # Copy the top-level source folder to the provided destination folder - TODO Copy all child objects not top-level source folder
 source_folder_metadata = service.files().get(fileId=source_folder_id, fields='name').execute()
 destination_folder_metadata = {'name': source_folder_metadata['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
@@ -138,6 +139,7 @@ new_folder = service.files().create(body=destination_folder_metadata, fields='id
 # Copy child objects (including nested folders) to the new top-level folder
 copy_child_objects(source_folder_id, new_folder['id'])
 print("COPY COMPLETED!")
+print("STARTING ASSESSMENTS...")
 
 # Write the child object count to a CSV file
 csv_file = './outputs/assessment-2.csv'
