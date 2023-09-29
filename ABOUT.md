@@ -29,7 +29,7 @@ The script also logs any errors encountered during the copying process.
 - The script specifies the source and destination folder IDs.
 - The script defines a function to count files and folders, which uses the Google Drive API to list the files and folders in a specified folder and count them.
 - The script defines a function to copy child objects recursively, which uses the Google Drive API to list the files and folders in a specified folder, copy the files to the destination folder, and recursively copy the child folders to the destination folder.
-- The script defines a function to handle copy errors, which logs the error to a log file and a CSV file, and retrieves the parent folder URLs if the error is related to copying a file.
+- The script defines a function to handle copy errors, which logs the error to a log file, and retrieves the parent folder URLs if the error is related to copying a file.
 - The script defines a function to count child objects recursively, which uses the Google Drive API to list the child folders in a specified folder, count them, and recursively count the child folders in each top-level folder.
 - The script gets the count for the specified folder using the count_files_and_folders() function.
 - The script writes the results to a CSV file.

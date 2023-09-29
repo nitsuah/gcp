@@ -1,27 +1,45 @@
 import os
 import csv
+import logging
 from google.oauth2 import credentials
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.errors import HttpError
 
+# Define API scopes
 SCOPES = [
     'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/drive.metadata.readonly'
 ]
 
+# Environment variables
+CLIENT_ID_ENV_VAR = 'GOOGLE_DRIVE_CLIENT_ID_FILE'
+SOURCE_FOLDER_ID_ENV_VAR = 'GOOGLE_DRIVE_SOURCE_FOLDER_ID'
+DESTINATION_FOLDER_ID_ENV_VAR = 'GOOGLE_DRIVE_DESTINATION_FOLDER_ID'
+
+# Directories and filenames
+OUTPUTS_DIRECTORY = './outputs/'
+ERROR_LOG_FILENAME = 'error.log'
+
 # Read client ID JSON file path from the environment variable
-client_id_file = os.environ.get('GOOGLE_DRIVE_CLIENT_ID_FILE')
+client_id_file = os.environ.get(CLIENT_ID_ENV_VAR)
 
 # Specify the source folder ID
-source_folder_id = os.environ.get('GOOGLE_DRIVE_SOURCE_FOLDER_ID')
+source_folder_id = os.environ.get(SOURCE_FOLDER_ID_ENV_VAR)
 
 # Specify the destination folder ID
-destination_folder_id = os.environ.get('GOOGLE_DRIVE_DESTINATION_FOLDER_ID')
+destination_folder_id = os.environ.get(DESTINATION_FOLDER_ID_ENV_VAR)
 
-# Check if the environment variable is set
+# Check if the environment variables are set
 if not client_id_file:
-    raise ValueError("Missing environment variable for Google Drive API Client ID JSON file.")
+    raise ValueError(f"Missing environment variable for Google Drive API Client ID JSON file: {CLIENT_ID_ENV_VAR}")
+if not source_folder_id:
+    raise ValueError(f"Missing environment variable for source folder ID: {SOURCE_FOLDER_ID_ENV_VAR}")
+if not destination_folder_id:
+    raise ValueError(f"Missing environment variable for destination folder ID: {DESTINATION_FOLDER_ID_ENV_VAR}")
+
+# Create a logger for better error tracking
+logging.basicConfig(filename=os.path.join(OUTPUTS_DIRECTORY, ERROR_LOG_FILENAME), level=logging.ERROR)
 
 # Create a flow to handle the OAuth2 authentication
 flow = InstalledAppFlow.from_client_secrets_file(client_id_file, SCOPES)
@@ -94,13 +112,12 @@ def handle_copy_error(file_or_folder_name, error):
             # Construct URLs to the parent folders based on their IDs
             for folder_id in parent_folder_ids:
                 folder_url = f'https://drive.google.com/drive/folders/{folder_id}'
-                print(f'Parent Folder URL: {folder_url}')
+                logging.error(f'Parent Folder URL: {folder_url}')
         except Exception as e:
-            print(f"ERROR-PARENT: {e}")
+            logging.error(f"ERROR-PARENT: {e}")
 
-        # Write the error to a log file
-        with open('./outputs/error.log', 'a') as log_file:
-            log_file.write(f"ERROR: {file_or_folder_name}: {error}\n")
+    # Write the error to the log file
+    logging.error(f"ERROR: {file_or_folder_name}: {error}")
 
 # Define a function to count child objects recursively
 def count_child_objects(folder_id):
@@ -131,7 +148,7 @@ with open(csv_file, 'w', newline='') as file:
     writer.writerow([source_folder_name['name'], num_files , num_folders])
 
 print("STARTING COPY...")
-# Copy the top-level source folder to the provided destination folder - TODO Copy all child objects not top-level source folder
+# Copy the top-level source folder to the provided destination folder - // TODO Copy all child objects not top-level source folder
 source_folder_metadata = service.files().get(fileId=source_folder_id, fields='name').execute()
 destination_folder_metadata = {'name': source_folder_metadata['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
 new_folder = service.files().create(body=destination_folder_metadata, fields='id, name').execute()
