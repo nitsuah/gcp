@@ -188,7 +188,7 @@ with open(csv_file, 'w', newline='') as file:
     count_child_objects(destination_folder_id)
 
     # Add the top-level folder to the CSV
-    writer.writerow([destination_folder_metadata['name'],  num_files, num_folders, count_child_objects(new_folder['id'][1])])
+    writer.writerow([destination_folder_metadata['name'],  num_files, num_folders, count_child_objects(new_folder['id'])[1]])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
