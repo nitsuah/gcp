@@ -88,16 +88,16 @@ def copy_child_objects(source_folder_id, destination_folder_id):
     query = f"'{source_folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
     results = service.files().list(q=query).execute()
     folders = results.get('files', [])
-    
-    try:
-        # Recursively copy child objects to the destination folder
-        for folder in folders:
-            folder_metadata = {'name': folder['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
-            new_folder = service.files().create(body=folder_metadata, fields='id, name').execute()
-            copy_child_objects(folder['id'], new_folder['id'])  # Pass new folder's ID
 
-    except HttpError as e:
-        handle_copy_error(folder['name'], e)
+    # Recursively copy child objects to the destination folder while preserving structure
+    for folder in folders:
+        # //FIXME Do not create a new folder with the same id as the source folder
+        if folder['id'] != destination_folder_id:
+            # Create a new folder in the destination with the same name
+            new_folder_metadata = {'name': folder['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
+            new_folder = service.files().create(body=new_folder_metadata, fields='id').execute()
+            # Recursively copy the child objects into the new folder
+            copy_child_objects(folder['id'], new_folder['id'])
 
 # Define a function to handle copy errors
 def handle_copy_error(file_or_folder_name, error):
@@ -125,30 +125,30 @@ def count_child_objects(folder_id):
     results = service.files().list(q=query).execute()
     folders = results.get('files', [])
     num_folders = len(folders)
+    num_files = 0  # Initialize the count of files for this folder
 
     # Recursively count child objects for each top-level folder
     for folder in folders:
         folder_id = folder['id']
-        child_files, child_folders = count_files_and_folders(folder_id)
-        num_child_folders = count_child_objects(folder_id)
+        child_files, num_child_folders = count_child_objects(folder_id)
+        num_files += child_files
         num_folders += num_child_folders
 
-    return num_folders
+    return num_files, num_folders
 
-# Get the count for the specified folder
-num_files, num_folders = count_files_and_folders(source_folder_id)
-
-# Write the results to a CSV file
+# ASSESSEMENT 1 - Write the results to a CSV file
 csv_file = './outputs/assessment-1.csv'
 with open(csv_file, 'w', newline='') as file:
     # Get the name of the source folder
     source_folder_name = service.files().get(fileId=source_folder_id, fields='name').execute()
+    # Get the count for the specified folder
+    num_files, num_folders = count_files_and_folders(source_folder_id)
     writer = csv.writer(file)
     writer.writerow(['Folder Name','Number of Files', 'Number of Folders'])
     writer.writerow([source_folder_name['name'], num_files , num_folders])
 
 print("STARTING COPY...")
-# Copy the top-level source folder to the provided destination folder - // TODO Copy all child objects not top-level source folder
+# Copy the top-level source folder to the provided destination folder
 source_folder_metadata = service.files().get(fileId=source_folder_id, fields='name').execute()
 destination_folder_metadata = {'name': source_folder_metadata['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
 new_folder = service.files().create(body=destination_folder_metadata, fields='id, name').execute()
@@ -163,9 +163,8 @@ csv_file = './outputs/assessment-2.csv'
 with open(csv_file, 'w', newline='') as file:
     writer = csv.writer(file)
     writer.writerow(['Folder Name', 'Number of Files', 'Number of Folders', 'Number of Child Folders'])
-
     # Add the top-level folder to the CSV
-    writer.writerow([source_folder_metadata['name'], num_files, num_folders, count_child_objects(new_folder['id'])])
+    writer.writerow([source_folder_metadata['name'], num_files, num_folders, count_child_objects(new_folder['id'])[1]])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
@@ -174,13 +173,10 @@ with open(csv_file, 'w', newline='') as file:
         folders = results.get('files', [])
         for folder in folders:
             folder_id = folder['id']
-            writer.writerow([folder['name'], count_files_and_folders(folder_id)[0], count_files_and_folders(folder_id)[1], count_child_objects(folder_id)])
+            writer.writerow([folder['name'], count_files_and_folders(folder_id)[0], count_files_and_folders(folder_id)[1], count_child_objects(folder_id)[1]])
             add_child_folders(folder_id)
 
     add_child_folders(new_folder['id'])
-
-# Count child objects in destination folder
-count_child_objects(destination_folder_id)
 
 # Write the child object count in destination to a CSV file
 csv_file = './outputs/assessment-3.csv'
@@ -188,8 +184,11 @@ with open(csv_file, 'w', newline='') as file:
     writer = csv.writer(file)
     writer.writerow(['Destination Folder Name', 'Number of Files', 'Number of Folders', 'Number of Child Folders'])
 
+    # Count child objects in destination folder
+    count_child_objects(destination_folder_id)
+
     # Add the top-level folder to the CSV
-    writer.writerow([destination_folder_metadata['name'],  num_files, num_folders, count_child_objects(new_folder['id'])])
+    writer.writerow([destination_folder_metadata['name'],  num_files, num_folders, count_child_objects(new_folder['id'][1])])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
@@ -198,7 +197,7 @@ with open(csv_file, 'w', newline='') as file:
         folders = results.get('files', [])
         for folder in folders:
             folder_id = folder['id']
-            writer.writerow([folder['name'], count_files_and_folders(folder_id)[0], count_files_and_folders(folder_id)[1], count_child_objects(folder_id)])
+            writer.writerow([folder['name'], count_files_and_folders(folder_id)[0], count_files_and_folders(folder_id)[1], count_child_objects(folder_id)[1]])
             add_child_folders(folder_id)
 
     add_child_folders(new_folder['id'])
