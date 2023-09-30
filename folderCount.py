@@ -2,6 +2,7 @@ import os
 import csv
 import logging
 import datetime
+import pandas as pd
 from google.oauth2 import credentials
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -203,3 +204,21 @@ with open(csv_file, 'w', newline='') as file:
     add_child_folders(destination_folder_id)
 
 print("ASSESSMENTS COMPLETED!")
+
+def compare_csv_files(file1, file2):
+    # Read the CSV files into pandas DataFrames
+    af1 = pd.read_csv(file1)
+    af2 = pd.read_csv(file2)
+
+    # Check if the DataFrames are equal
+    if af1.equals(af2):
+        pass
+    else:
+        print("ERROR: Source and destination folder counts do not match.")
+
+# Example usage
+output1 = './outputs/assessment-1.csv'
+output2 = './outputs/assessment-2.csv'
+output3 = './outputs/assessment-3.csv'
+
+compare_csv_files(output2, output3)
