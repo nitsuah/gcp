@@ -31,4 +31,4 @@ This script uses the Google Drive API to count the number of files and folders i
 - The script defines a function to count child objects recursively, counting child folders in a specified folder and recursively counting child folders in each top-level folder.
 - It retrieves the count for the specified folder using the `count_files_and_folders()` function.
 - The script writes the results to a CSV file.
-- The top-level source folder is copied to the provided destination folder using the `copy_child_objects()` function.
+- The top-level source folder is copied to the provided destination folder using the `copy_child_objects()` function. //FIXME: Top-level folder should not be copied.

@@ -1,6 +1,7 @@
 import os
 import csv
 import logging
+import datetime
 from google.oauth2 import credentials
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -19,7 +20,15 @@ DESTINATION_FOLDER_ID_ENV_VAR = 'GOOGLE_DRIVE_DESTINATION_FOLDER_ID'
 
 # Directories and filenames
 OUTPUTS_DIRECTORY = './outputs/'
-ERROR_LOG_FILENAME = 'error.log'
+
+# Get the current timestamp
+timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M')
+
+# Set up the log file name with the timestamp
+ERROR_LOG_FILENAME = f'error-{timestamp}.log'
+
+# Create a logger for better error tracking
+logging.basicConfig(filename=os.path.join(OUTPUTS_DIRECTORY, ERROR_LOG_FILENAME), level=logging.ERROR)
 
 # Read client ID JSON file path from the environment variable
 client_id_file = os.environ.get(CLIENT_ID_ENV_VAR)
@@ -37,9 +46,6 @@ if not source_folder_id:
     raise ValueError(f"Missing environment variable for source folder ID: {SOURCE_FOLDER_ID_ENV_VAR}")
 if not destination_folder_id:
     raise ValueError(f"Missing environment variable for destination folder ID: {DESTINATION_FOLDER_ID_ENV_VAR}")
-
-# Create a logger for better error tracking
-logging.basicConfig(filename=os.path.join(OUTPUTS_DIRECTORY, ERROR_LOG_FILENAME), level=logging.ERROR)
 
 # Create a flow to handle the OAuth2 authentication
 flow = InstalledAppFlow.from_client_secrets_file(client_id_file, SCOPES)
@@ -91,13 +97,11 @@ def copy_child_objects(source_folder_id, destination_folder_id):
 
     # Recursively copy child objects to the destination folder while preserving structure
     for folder in folders:
-        # //FIXME Do not create a new folder with the same id as the source folder
-        if folder['id'] != destination_folder_id:
-            # Create a new folder in the destination with the same name
-            new_folder_metadata = {'name': folder['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
-            new_folder = service.files().create(body=new_folder_metadata, fields='id').execute()
-            # Recursively copy the child objects into the new folder
-            copy_child_objects(folder['id'], new_folder['id'])
+        # Create a new folder in the destination with the same name
+        new_folder_metadata = {'name': folder['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
+        new_folder = service.files().create(body=new_folder_metadata, fields='id').execute()
+        # Recursively copy the child objects into the new folder
+        copy_child_objects(folder['id'], new_folder['id'])
 
 # Define a function to handle copy errors
 def handle_copy_error(file_or_folder_name, error):
@@ -147,15 +151,12 @@ with open(csv_file, 'w', newline='') as file:
     writer.writerow(['Folder Name','Number of Files', 'Number of Folders'])
     writer.writerow([source_folder_name['name'], num_files , num_folders])
 
-print("STARTING COPY...")
+
 # Copy the top-level source folder to the provided destination folder
 source_folder_metadata = service.files().get(fileId=source_folder_id, fields='name').execute()
 destination_folder_metadata = {'name': source_folder_metadata['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
 new_folder = service.files().create(body=destination_folder_metadata, fields='id, name').execute()
 
-# Copy child objects (including nested folders) to the new top-level folder
-copy_child_objects(source_folder_id, new_folder['id'])
-print("COPY COMPLETED!")
 print("STARTING ASSESSMENTS...")
 
 # Write the child object count to a CSV file
@@ -163,8 +164,9 @@ csv_file = './outputs/assessment-2.csv'
 with open(csv_file, 'w', newline='') as file:
     writer = csv.writer(file)
     writer.writerow(['Folder Name', 'Number of Files', 'Number of Folders', 'Number of Child Folders'])
+    
     # Add the top-level folder to the CSV
-    writer.writerow([source_folder_metadata['name'], num_files, num_folders, count_child_objects(new_folder['id'])[1]])
+    writer.writerow([source_folder_metadata['name'], num_files, num_folders, count_child_objects(source_folder_id)[1]])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
@@ -176,7 +178,13 @@ with open(csv_file, 'w', newline='') as file:
             writer.writerow([folder['name'], count_files_and_folders(folder_id)[0], count_files_and_folders(folder_id)[1], count_child_objects(folder_id)[1]])
             add_child_folders(folder_id)
 
-    add_child_folders(new_folder['id'])
+    add_child_folders(source_folder_id)
+
+
+print("STARTING COPY...")
+# Copy child objects (including nested folders) to the new top-level folder // FIXME: COPY OF SOURCE in destination
+copy_child_objects(source_folder_id, destination_folder_id)
+print("COPY COMPLETED!")
 
 # Write the child object count in destination to a CSV file
 csv_file = './outputs/assessment-3.csv'
@@ -184,11 +192,8 @@ with open(csv_file, 'w', newline='') as file:
     writer = csv.writer(file)
     writer.writerow(['Destination Folder Name', 'Number of Files', 'Number of Folders', 'Number of Child Folders'])
 
-    # Count child objects in destination folder
-    count_child_objects(destination_folder_id)
-
     # Add the top-level folder to the CSV
-    writer.writerow([destination_folder_metadata['name'],  num_files, num_folders, count_child_objects(new_folder['id'])[1]])
+    writer.writerow([destination_folder_metadata['name'], num_files, num_folders, count_child_objects(destination_folder_id)[1]])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
@@ -200,6 +205,6 @@ with open(csv_file, 'w', newline='') as file:
             writer.writerow([folder['name'], count_files_and_folders(folder_id)[0], count_files_and_folders(folder_id)[1], count_child_objects(folder_id)[1]])
             add_child_folders(folder_id)
 
-    add_child_folders(new_folder['id'])
+    add_child_folders(destination_folder_id)
 
 print("ASSESSMENTS COMPLETED!")
