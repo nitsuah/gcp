@@ -126,55 +126,57 @@ def handle_copy_error(file_or_folder_name, error):
 
 # Define a function to count child objects recursively
 def count_child_objects(folder_id):
-    query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
+    query = f"'{folder_id}' in parents"
     results = service.files().list(q=query).execute()
-    folders = results.get('files', [])
-    num_folders = len(folders)
-    num_files = 0  # Initialize the count of files for this folder
+    files_and_folders = results.get('files', [])
+    num_files = 0
+    num_folders = 0
 
-    # Recursively count child objects for each top-level folder
-    for folder in folders:
-        folder_id = folder['id']
-        child_files, num_child_folders = count_child_objects(folder_id)
-        num_files += child_files
-        num_folders += num_child_folders
+    for item in files_and_folders:
+        if item['mimeType'] == 'application/vnd.google-apps.folder':
+            # It's a folder, increment folder count
+            num_folders += 1
+            # Recursively count child objects for each folder
+            num_child_files, num_child_folders = count_child_objects(item['id'])
+            num_files += num_child_files
+            num_folders += num_child_folders
+        else:
+            # It's a file, increment file count
+            num_files += 1
 
     return num_files, num_folders
 
 print("STARTING ASSESSMENTS...")
-
 # ASSESSEMENT 1 - Write the results to a CSV file
 csv_file = './outputs/assessment-1.csv'
 with open(csv_file, 'w', newline='') as file:
     # Get the name of the source folder
     source_folder_name = service.files().get(fileId=source_folder_id, fields='name').execute()
-    # Get the count for the specified folder
-    num_files, num_folders = count_files_and_folders(source_folder_id)
+    num_files, num_folders = count_child_objects(source_folder_id)
     writer = csv.writer(file)
-    writer.writerow(['Folder Name','Number of Files', 'Number of Folders'])
-    writer.writerow([source_folder_name['name'], num_files , num_folders])
+    writer.writerow(['Folder Name', 'Number of Files', 'Number of Folders'])
+    writer.writerow([source_folder_name['name'], num_files, num_folders])
 
-# Variables for Source & destination folder metadata
-source_folder_metadata = service.files().get(fileId=source_folder_id, fields='name').execute()
-destination_folder_metadata = {'name': source_folder_metadata['name'], 'parents': [destination_folder_id], 'mimeType': 'application/vnd.google-apps.folder'}
-
-# Write the child object count to a CSV file
+# ASSESSEMENT 2 - Write the results to a CSV file
 csv_file = './outputs/assessment-2.csv'
 with open(csv_file, 'w', newline='') as file:
     writer = csv.writer(file)
-    writer.writerow(['Folder Name', 'Number of Files', 'Number of Folders', 'Number of Child Folders'])
+    writer.writerow(['Folder Name', 'Number of Files', 'Number of Child Folders'])
     
-    # Add the top-level folder to the CSV
-    writer.writerow([source_folder_metadata['name'], count_files_and_folders(source_folder_id)[0], count_files_and_folders(source_folder_id)[1], count_child_objects(source_folder_id)[1]])
+    # Write the Total at the top of the CSV
+    source_folder_name = service.files().get(fileId=source_folder_id, fields='name').execute()
+    num_files, num_folders = count_child_objects(source_folder_id)
+    writer.writerow([source_folder_name['name'], num_files, num_folders])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
-        query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
-        results = service.files().list(q=query).execute()
+        query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        results = service.files().list(q=query, orderBy='name asc').execute()
         folders = results.get('files', [])
         for folder in folders:
             folder_id = folder['id']
-            writer.writerow([folder['name'], count_files_and_folders(folder_id)[0], count_files_and_folders(folder_id)[1], count_child_objects(folder_id)[1]])
+            num_files, num_folders = count_child_objects(folder_id)
+            writer.writerow([folder['name'], num_files, num_folders])
 
     add_child_folders(source_folder_id)
 
@@ -183,28 +185,32 @@ print("STARTING COPY...")
 copy_child_objects(source_folder_id, destination_folder_id)
 print("COPY COMPLETED!")
 
-# Write the child object count in destination to a CSV file
+# ASSESSEMENT 3 - Write the results to a CSV file
 csv_file = './outputs/assessment-3.csv'
 with open(csv_file, 'w', newline='') as file:
     writer = csv.writer(file)
-    writer.writerow(['Destination Folder Name', 'Number of Files', 'Number of Folders', 'Number of Child Folders'])
+    writer.writerow(['Folder Name', 'Number of Files', 'Number of Child Folders'])
 
-    # Add the top-level folder to the CSV
-    writer.writerow([destination_folder_metadata['name'], count_files_and_folders(destination_folder_id)[0], count_files_and_folders(destination_folder_id)[1], count_child_objects(destination_folder_id)[1]])
+    # Write the Total at the top of the CSV
+    num_files, num_folders = count_child_objects(destination_folder_id)
+    writer.writerow([source_folder_name['name'], num_files, num_folders])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
-        query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        results = service.files().list(q=query).execute()
+        query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
+        results = service.files().list(q=query, orderBy='name asc').execute()
         folders = results.get('files', [])
         for folder in folders:
             folder_id = folder['id']
-            writer.writerow([folder['name'], count_files_and_folders(folder_id)[0], count_files_and_folders(folder_id)[1], count_child_objects(folder_id)[1]])
+            num_files, num_folders = count_child_objects(folder_id)
+            writer.writerow([folder['name'], num_files, num_folders])
 
     add_child_folders(destination_folder_id)
 
 print("ASSESSMENTS COMPLETED!")
 
+print("STARTING VALIDATION...")
+# Compare outputs CSV files
 def compare_csv_files(file1, file2):
     # Read the CSV files into pandas DataFrames
     af1 = pd.read_csv(file1)
@@ -212,13 +218,16 @@ def compare_csv_files(file1, file2):
 
     # Check if the DataFrames are equal
     if af1.equals(af2):
-        pass
+        print("VALIDATION SUCCESSFUL!")
     else:
-        print("ERROR: Source and destination folder counts do not match.")
+        print("ERROR: Source & Destination folder counts do not match.")
+        print("VALIDATION FAILED!")
 
-# Example usage
-output1 = './outputs/assessment-1.csv'
+# Load source and destination file count CSV reports 
 output2 = './outputs/assessment-2.csv'
 output3 = './outputs/assessment-3.csv'
 
 compare_csv_files(output2, output3)
+
+
+print("SUCCESS:" + source_folder_id['name'] + " copied to " + destination_folder_id['name'])
