@@ -35,3 +35,7 @@ export GOOGLE_DRIVE_CLIENT_ID_FILE='/your/path/to/client_id.json';
 - [![Assessment-1](https://badgen.net/badge/assessment-1/VALIDATED/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-1.csv)
 - [![Assessment-2](https://badgen.net/badge/assessment-2/VALIDATED/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-2.csv)
 - [![Assessment-3](https://badgen.net/badge/assessment-3/VALIDATED/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-3.csv)
+
+## Workflows
+
+- [![Pylint](https://github.com/nitsuah/gcp/actions/workflows/pylint.yml/badge.svg)](https://github.com/nitsuah/gcp/actions/workflows/pylint.yml)
