@@ -41,4 +41,4 @@ This script utilizes the Google Drive API to enumerate the number of files and f
 - The script includes a validation step:
   - It compares the CSV reports generated in ASSESSMENT 2 and ASSESSMENT 3 using the `compare_csv_files()` function. The validation is deemed successful if the reports match, and an error message is displayed if they do not.
 
-- The script concludes with a success message indicating that the folder contents has been copied from the source to the destination.
+- The script concludes with a success message indicating that the folder contents have been copied from the source to the destination.
