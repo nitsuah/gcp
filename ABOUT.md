@@ -1,6 +1,6 @@
 # ABOUT
 
-This script utilizes the Google Drive API to enumerate the number of files and folders within a specified folder. It then proceeds to copy the top-level folder to a destination folder, with a comprehensive logging mechanism for encountered errors during the copying process.
+This script utilizes the Google Drive API to enumerate the number of files and folders within a specified folder. It then proceeds to copy the top-level folder contents to a destination folder, with a comprehensive logging mechanism for encountered errors during the copying process. Finally it performs a validation step to ensure that the number of files and folders in the destination folder matches the number of files and folders in the source folder.
 
 ## Functions
 
@@ -35,7 +35,7 @@ This script utilizes the Google Drive API to enumerate the number of files and f
 
 - The script specifically performs three assessments:
   1. **ASSESSMENT 1**: Writes the results of counting all files and folders in a source folder to a CSV file.
-  2. **ASSESSMENT 2**: Writes the results of counting all files and folders, as well as child folders, recursively to a CSV file.
+  2. **ASSESSMENT 2**: Writes the results of counting all files and folders for the first root children folder, as well as child folders, recursively to a CSV file.
   3. **ASSESSMENT 3**: Copies the source folder contents to the provided destination folder and writes the count of files and child folders found at the destination to a CSV file.
 
 - The script includes a validation step:
