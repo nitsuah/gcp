@@ -1,12 +1,15 @@
+'''
+A script using the Google Drive API to create reports and copy contents between folders.
+'''
 import os
 import csv
 import logging
 import datetime
 import pandas as pd
 from google.oauth2 import credentials
-from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.errors import HttpError
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError # pylint: disable=ungrouped-imports
 
 # Define API scopes
 SCOPES = [
@@ -19,7 +22,7 @@ CLIENT_ID_ENV_VAR = 'GOOGLE_DRIVE_CLIENT_ID_FILE'
 SOURCE_FOLDER_ID_ENV_VAR = 'GOOGLE_DRIVE_SOURCE_FOLDER_ID'
 DESTINATION_FOLDER_ID_ENV_VAR = 'GOOGLE_DRIVE_DESTINATION_FOLDER_ID'
 
-# Other Constants - to save line space & readability
+# Script Constants
 MISSING_ENVAR_TXT = 'Missing environment variable for'
 MIME_FOLDER = 'application/vnd.google-apps.folder'
 
@@ -91,6 +94,12 @@ if authed_credentials:
     service = create_drive_service(authed_credentials)
 else:
     logging.error("Authorization failed.")
+
+# MAGIC Constants - to improve readability & linting
+# Disable pylint for no-member at the function level
+# pylint: disable=no-member
+source_folder_name = service.files().get(fileId=source_folder_id, fields='name').execute()
+destination_folder_name = service.files().get(fileId=destination_folder_id, fields='name').execute()
 
 # Define a function to count files and folders
 def count_files_and_folders(folder_id):
@@ -252,12 +261,14 @@ def add_child_folders(folder_id):
         num_files, num_folders = count_child_objects(folder_id)
         WRITER.writerow([folder['name'], num_files, num_folders])
 
+# Enable pylint for no-member again
+# pylint: enable=no-member
+
 logging.info("STARTING ASSESSMENTS...")
 # ASSESSEMENT 1 - Write the results to a CSV file
 CSV_FILE = './outputs/assessment-1.csv'
 with open(CSV_FILE, 'w', newline='', encoding='utf-8') as output_file:
     # Get the name of the source folder
-    source_folder_name = service.files().get(fileId=source_folder_id, fields='name').execute()
     total_num_files, total_num_folders = count_child_objects(source_folder_id)
     WRITER = csv.writer(output_file)
     WRITER.writerow(['Folder Name', 'Number of Files', 'Number of Folders'])
@@ -274,7 +285,7 @@ with open(CSV_FILE, 'w', newline='', encoding='utf-8') as output_file:
     add_child_folders(source_folder_id)
 
 # Copy all child objects (including nested folders and files) to the new top-level folder
-destination_folder_name = service.files().get(fileId=destination_folder_id, fields='name').execute()
+
 logging.info("STARTING COPY TO %s...", destination_folder_name['name'])
 copy_child_objects(source_folder_id, destination_folder_id)
 logging.info("COPY COMPLETED!")
