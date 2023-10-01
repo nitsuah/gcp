@@ -26,10 +26,10 @@ OUTPUTS_DIRECTORY = './outputs/'
 timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M')
 
 # Set up the log file name with the timestamp
-ERROR_LOG_FILENAME = f'error-{timestamp}.log'
+ERROR_LOG_FILENAME = f'gcp-{timestamp}.log'
 
 # Create a logger for better error tracking
-logging.basicConfig(filename=os.path.join(OUTPUTS_DIRECTORY, ERROR_LOG_FILENAME), level=logging.ERROR)
+logging.basicConfig(filename=os.path.join(OUTPUTS_DIRECTORY, ERROR_LOG_FILENAME), level=logging.ERROR, format='%(asctime)s %(levelname)s %(message)s %(filename)s %(funcName)s %(lineno)d')
 
 # Read client ID JSON file path from the environment variable
 client_id_file = os.environ.get(CLIENT_ID_ENV_VAR)
@@ -78,7 +78,8 @@ def count_files_and_folders(folder_id):
     return num_files, num_folders
 
 # Define a function to copy child objects recursively
-def copy_child_objects(source_folder_id, destination_folder_id):
+def copy_child_objects(source_folder_id, destination_folder_id, max_retries=3):
+    # List files in the source folder
     query = f"'{source_folder_id}' in parents"
     results = service.files().list(q=query).execute()
     files = results.get('files', [])
@@ -87,11 +88,28 @@ def copy_child_objects(source_folder_id, destination_folder_id):
         # Copy each file to the destination folder
         for file in files:
             file_metadata = {'name': file['name'], 'parents': [destination_folder_id]}
-            service.files().copy(fileId=file['id'], body=file_metadata).execute()
+            
+            # Retry loop
+            for retry in range(max_retries):
+                try:
+                    # Attempt to copy the file
+                    service.files().copy(fileId=file['id'], body=file_metadata).execute()
+                    # If the copy is successful, break out of the retry loop
+                    break
+                except HttpError as e:
+                    if retry < max_retries - 1:
+                        # Log the error and retry
+                        logging.error(f"Error copying file {file['name']}, retrying... ({retry + 1}/{max_retries})")
+                    else:
+                        # If all retries fail, log the error and move on to the next file
+                        logging.error(f"Error copying file {file['name']} after {max_retries} retries: {e}")
+                        break
 
     except HttpError as e:
+        # Handle errors related to copying files
         handle_copy_error(file['name'], e)
 
+    # List folders in the source folder
     query = f"'{source_folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
     results = service.files().list(q=query).execute()
     folders = results.get('files', [])
@@ -192,12 +210,13 @@ with open(csv_file, 'w', newline='') as file:
     writer.writerow(['Folder Name', 'Number of Files', 'Number of Child Folders'])
 
     # Write the Total at the top of the CSV
+    destination_folder_name = service.files().get(fileId=destination_folder_id, fields='name').execute()
     num_files, num_folders = count_child_objects(destination_folder_id)
     writer.writerow([source_folder_name['name'], num_files, num_folders])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
-        query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
+        query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
         results = service.files().list(q=query, orderBy='name asc').execute()
         folders = results.get('files', [])
         for folder in folders:
@@ -229,5 +248,4 @@ output3 = './outputs/assessment-3.csv'
 
 compare_csv_files(output2, output3)
 
-
-print("SUCCESS:" + source_folder_id['name'] + " copied to " + destination_folder_id['name'])
+print("SUCCESS:" + source_folder_name['name'] + " copied to " + destination_folder_name['name'])
