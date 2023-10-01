@@ -19,19 +19,19 @@
 - Local dev setup (see common imports below, but I used wsl)
 
 ```bash
-sudo apt-get update
-sudo apt-get install upgrade
-sudo apt-get install python3
-sudo apt-get install python3-pip
-sudo pip install csv logging datetime pandas
-sudo pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
-export GOOGLE_DRIVE_FOLDER_ID='source-folder-id'
-export GOOGLE_DRIVE_DESTINATION_FOLDER_ID='destination-folder-id'
-export GOOGLE_DRIVE_CLIENT_ID_FILE='/your/path/to/client_id.json'
+sudo apt-get update;
+sudo apt-get install upgrade;
+sudo apt-get install python3;
+sudo apt-get install python3-pip;
+sudo pip install csv logging datetime pandas;
+sudo pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib;
+export GOOGLE_DRIVE_FOLDER_ID='source-folder-id';
+export GOOGLE_DRIVE_DESTINATION_FOLDER_ID='destination-folder-id';
+export GOOGLE_DRIVE_CLIENT_ID_FILE='/your/path/to/client_id.json';
 ```
 
 ## Outputs
 
-- [![Assessment-1](https://badgen.net/badge/assessment-1/FIXED/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-1.csv)
-- [![Assessment-2](https://badgen.net/badge/assessment-2/FIXED/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-2.csv)
-- [![Assessment-3](https://badgen.net/badge/assessment-3/FIXED/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-3.csv)
+- [![Assessment-1](https://badgen.net/badge/assessment-1/VALIDATED/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-1.csv)
+- [![Assessment-2](https://badgen.net/badge/assessment-2/VALIDATED/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-2.csv)
+- [![Assessment-3](https://badgen.net/badge/assessment-3/VALIDATED/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-3.csv)
