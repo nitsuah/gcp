@@ -1,4 +1,6 @@
-''' A script using the Google Drive API to create reports and copy contents between folders. '''
+'''
+A script using the Google Drive API to create reports and copy contents between folders.
+'''
 import os
 import csv
 import logging
