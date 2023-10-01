@@ -21,7 +21,7 @@ DESTINATION_FOLDER_ID_ENV_VAR = 'GOOGLE_DRIVE_DESTINATION_FOLDER_ID'
 
 # Other Constants - to save line space & readability
 MISSING_ENVAR_TXT = 'Missing environment variable for'
-MIME_FOLDER = "'application/vnd.google-apps.folder'"
+MIME_FOLDER = 'application/vnd.google-apps.folder'
 
 # Directories and filenames
 OUTPUTS_DIRECTORY = './outputs/'
@@ -53,19 +53,44 @@ if not destination_folder_id:
     raise ValueError(f"{MISSING_ENVAR_TXT} Destination folder ID: {DESTINATION_FOLDER_ID_ENV_VAR}")
 
 # Create a flow to handle the OAuth2 authentication
-FLOW = InstalledAppFlow.from_client_secrets_file(CLIENT_ID_FILE, SCOPES)
+def authenticate_and_authorize(client_id_file, api_scopes):
+    """
+    Handles OAuth2 authentication and authorization.
+
+    Args:
+        client_id_file (str): The path to the client ID JSON file.
+        api_scopes (list): The list of API scopes.
+
+    Returns:
+        credentials (google.oauth2.credentials.Credentials): The authorized credentials.
+    """
+    flow = InstalledAppFlow.from_client_secrets_file(client_id_file, api_scopes)
+    auth_credentials = flow.run_local_server()
+
+    if credentials and auth_credentials.valid:
+        return auth_credentials
+    return None
+
+def create_drive_service(valid_credentials):
+    """
+    Creates a Google Drive API service object.
+
+    Args:
+        valid_credentials (google.oauth2.credentials.Credentials): The authorized credentials.
+
+    Returns:
+        service (googleapiclient.discovery.Resource): The Drive API service object.
+    """
+    return build('drive', 'v3', credentials=valid_credentials)
 
 # Authenticate and authorize the user
-credentials = FLOW.run_local_server()
+authed_credentials = authenticate_and_authorize(CLIENT_ID_FILE, SCOPES)
 
 # Check if credentials are valid
-if credentials and credentials.valid:
-    pass
+if authed_credentials:
+    service = create_drive_service(authed_credentials)
 else:
-    logging.error("Authentication failed.")
-
-# Create a Google Drive API service object
-service = build('drive', 'v3', credentials=credentials)
+    logging.error("Authorization failed.")
 
 # Define a function to count files and folders
 def count_files_and_folders(folder_id):
@@ -80,13 +105,13 @@ def count_files_and_folders(folder_id):
         num_folders (int): The total number of folders in the folder.
     """
     # Count Files
-    query = (f"'{folder_id}' in parents and mimeType != 'application/vnd.google-apps.folder' "
+    query = (f"'{folder_id}' in parents and mimeType != '{MIME_FOLDER}' "
              f"and trashed = false")
     results = service.files().list(q=query).execute()
     files = results.get('files', [])
     num_files = len(files)
     # Count Folders
-    query = (f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder' "
+    query = (f"'{folder_id}' in parents and mimeType = '{MIME_FOLDER}' "
              f"and trashed = false")
     results = service.files().list(q=query).execute()
     folders = results.get('files', [])
@@ -106,7 +131,7 @@ def count_child_objects(folder_id):
         num_files (int): The total number of files in the folder and its subfolders.
         num_folders (int): The total number of folders in the folder and its subfolders.
     """
-    query = f"'{folder_id}' in parents"
+    query = f"'{folder_id}' in parents and trashed = false"
     results = service.files().list(q=query).execute()
     files_and_folders = results.get('files', [])
     num_files = 0
@@ -167,7 +192,7 @@ def copy_child_objects(src_folder_id, dest_folder_id, max_retries=1):
         handle_copy_error(file['name'], error_msg)
 
     # List folders in the source folder
-    query = f"'{src_folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
+    query = f"'{src_folder_id}' in parents and mimeType = '{MIME_FOLDER}'"
     results = service.files().list(q=query).execute()
     folders = results.get('files', [])
 
@@ -218,7 +243,7 @@ def add_child_folders(folder_id):
         folder_id (str): The ID of the folder to add child folders for.
     """
     query = (f"'{folder_id}' in parents and "
-         f"mimeType = 'application/vnd.google-apps.folder' and "
+         f"mimeType = '{MIME_FOLDER}' and "
          f"trashed = false")
     results = service.files().list(q=query, orderBy='name asc').execute()
     folders = results.get('files', [])
