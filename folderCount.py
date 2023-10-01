@@ -58,7 +58,7 @@ credentials = flow.run_local_server()
 if credentials and credentials.valid:
     pass
 else:
-    print("Authentication failed.")
+    logging.ERROR("Authentication failed.")
 
 # Create a Google Drive API service object
 service = build('drive', 'v3', credentials=credentials)
@@ -78,7 +78,7 @@ def count_files_and_folders(folder_id):
     return num_files, num_folders
 
 # Define a function to copy child objects recursively
-def copy_child_objects(source_folder_id, destination_folder_id, max_retries=3):
+def copy_child_objects(source_folder_id, destination_folder_id, max_retries=1):
     # List files in the source folder
     query = f"'{source_folder_id}' in parents"
     results = service.files().list(q=query).execute()
@@ -164,7 +164,7 @@ def count_child_objects(folder_id):
 
     return num_files, num_folders
 
-print("STARTING ASSESSMENTS...")
+logging.info("STARTING ASSESSMENTS...")
 # ASSESSEMENT 1 - Write the results to a CSV file
 csv_file = './outputs/assessment-1.csv'
 with open(csv_file, 'w', newline='') as file:
@@ -182,9 +182,8 @@ with open(csv_file, 'w', newline='') as file:
     writer.writerow(['Folder Name', 'Number of Files', 'Number of Child Folders'])
     
     # Write the Total at the top of the CSV
-    source_folder_name = service.files().get(fileId=source_folder_id, fields='name').execute()
     num_files, num_folders = count_child_objects(source_folder_id)
-    writer.writerow([source_folder_name['name'], num_files, num_folders])
+    writer.writerow(['TOTAL', num_files, num_folders])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
@@ -199,9 +198,10 @@ with open(csv_file, 'w', newline='') as file:
     add_child_folders(source_folder_id)
 
 # Copy child objects (including nested folders) to the new top-level folder
-print("STARTING COPY...")
+destination_folder_name = service.files().get(fileId=destination_folder_id, fields='name').execute()
+logging.info("STARTING COPY TO " + destination_folder_name['name'] + "...")
 copy_child_objects(source_folder_id, destination_folder_id)
-print("COPY COMPLETED!")
+logging.info("COPY COMPLETED!")
 
 # ASSESSEMENT 3 - Write the results to a CSV file
 csv_file = './outputs/assessment-3.csv'
@@ -210,9 +210,8 @@ with open(csv_file, 'w', newline='') as file:
     writer.writerow(['Folder Name', 'Number of Files', 'Number of Child Folders'])
 
     # Write the Total at the top of the CSV
-    destination_folder_name = service.files().get(fileId=destination_folder_id, fields='name').execute()
     num_files, num_folders = count_child_objects(destination_folder_id)
-    writer.writerow([source_folder_name['name'], num_files, num_folders])
+    writer.writerow(['TOTAL', num_files, num_folders])
 
     # Recursively add child folders to the CSV
     def add_child_folders(folder_id):
@@ -226,9 +225,9 @@ with open(csv_file, 'w', newline='') as file:
 
     add_child_folders(destination_folder_id)
 
-print("ASSESSMENTS COMPLETED!")
+logging.info("ASSESSMENTS COMPLETED!")
 
-print("STARTING VALIDATION...")
+logging.info("STARTING VALIDATION...")
 # Compare outputs CSV files
 def compare_csv_files(file1, file2):
     # Read the CSV files into pandas DataFrames
@@ -237,9 +236,9 @@ def compare_csv_files(file1, file2):
 
     # Check if the DataFrames are equal
     if af1.equals(af2):
-        print("VALIDATION SUCCESSFUL!")
+        logging.info("VALIDATION SUCCESSFUL!")
     else:
-        print("ERROR: Source & Destination folder counts do not match.")
+        logging.ERROR("ERROR: VALIDATION FAILED - Source & Destination folder counts do not match.")
         print("VALIDATION FAILED!")
 
 # Load source and destination file count CSV reports 
@@ -248,4 +247,5 @@ output3 = './outputs/assessment-3.csv'
 
 compare_csv_files(output2, output3)
 
-print("SUCCESS:" + source_folder_name['name'] + " copied to " + destination_folder_name['name'])
+logging.info("SUCCESS:" + source_folder_name['name'] + " copied to " + destination_folder_name['name'])
+print("SCRIPT COMPLETED!")
