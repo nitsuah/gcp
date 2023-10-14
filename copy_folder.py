@@ -1,59 +1,92 @@
 '''
-A script using the Google Drive API to create reports and copy contents between folders.
+A script using the Google Drive API to create reports and copy contents from one folder to another.
 '''
 import os
-import csv
 import logging
 import datetime
+import configparser
+import csv
 import pandas as pd
 from google.oauth2 import credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError # pylint: disable=ungrouped-imports
+from google.auth.exceptions import DefaultCredentialsError, GoogleAuthError  # pylint: disable=ungrouped-imports
+from googleapiclient.errors import HttpError  # pylint: disable=ungrouped-imports
 
 # Define API scopes
-SCOPES = [
-    'https://www.googleapis.com/auth/drive',
-    'https://www.googleapis.com/auth/drive.metadata.readonly'
-]
-
-# Environment variables
-CLIENT_ID_ENV_VAR = 'GOOGLE_DRIVE_CLIENT_ID_FILE'
-SOURCE_FOLDER_ID_ENV_VAR = 'GOOGLE_DRIVE_SOURCE_FOLDER_ID'
-DESTINATION_FOLDER_ID_ENV_VAR = 'GOOGLE_DRIVE_DESTINATION_FOLDER_ID'
+SCOPES = ['https://www.googleapis.com/auth/drive']
 
 # Script Constants
 MISSING_ENVAR_TXT = 'Missing environment variable for'
 MIME_FOLDER = 'application/vnd.google-apps.folder'
-
-# Directories and filenames
-OUTPUTS_DIRECTORY = './outputs/'
-
-# Get the current timestamp
-TIMESTAMP = datetime.datetime.now().strftime('%Y%m%d%H%M')
+OUTPUTS_DIRECTORY = os.path.join(os.getcwd(), 'outputs')
+os.makedirs(OUTPUTS_DIRECTORY, exist_ok=True)
 
 # Create a logger for better error tracking
+TIMESTAMP = datetime.datetime.now().strftime('%Y%m%d%H%M')
 LOG_FILENAME = f'gcp-{TIMESTAMP}.log'
 LOG_FILE_PATH = os.path.join(OUTPUTS_DIRECTORY, LOG_FILENAME)
-LOG_FILE_FORMAT='%(asctime)s %(levelname)s %(message)s %(filename)s %(funcName)s %(lineno)d'
-logging.basicConfig(filename=LOG_FILE_PATH, level=logging.INFO, format=LOG_FILE_FORMAT)
 
-# Read client ID JSON file path from the environment variable
-CLIENT_ID_FILE = os.environ.get(CLIENT_ID_ENV_VAR)
+# Load configuration from a file
+config = configparser.ConfigParser()
+config.read('config.ini')  # Requires a config.ini file in the same directory as the script
 
-# Specify the source folder ID
-source_folder_id = os.environ.get(SOURCE_FOLDER_ID_ENV_VAR)
+# Configuration variables
+client_id_env_var = config.get(
+    'EnvironmentVariables',
+    'CLIENT_ID_ENV_VAR',
+    fallback='GOOGLE_DRIVE_CLIENT_ID_FILE'
+)
+source_folder_id_env_var = config.get(
+    'EnvironmentVariables',
+    'SOURCE_FOLDER_ID_ENV_VAR',
+    fallback='GOOGLE_DRIVE_SOURCE_FOLDER_ID'
+)
+destination_folder_id_env_var = config.get(
+    'EnvironmentVariables',
+    'DESTINATION_FOLDER_ID_ENV_VAR',
+    fallback='GOOGLE_DRIVE_DESTINATION_FOLDER_ID'
+)
 
-# Specify the destination folder ID
-destination_folder_id = os.environ.get(DESTINATION_FOLDER_ID_ENV_VAR)
+# Define the logging Configuration
+def configure_logging(log_file_path):
+    """
+    Handles logging configuration.
+    """
+    logging.basicConfig(
+        filename=log_file_path,
+        level=logging.INFO,
+        format='%(asctime)s %(levelname)s %(message)s %(filename)s %(funcName)s %(lineno)d'
+    )
 
-# Check if the environment variables are set
-if not CLIENT_ID_FILE:
-    raise ValueError(f"{MISSING_ENVAR_TXT} Google Drive API Client ID JSON: {CLIENT_ID_ENV_VAR}")
-if not source_folder_id:
-    raise ValueError(f"{MISSING_ENVAR_TXT} Source folder ID: {SOURCE_FOLDER_ID_ENV_VAR}")
-if not destination_folder_id:
-    raise ValueError(f"{MISSING_ENVAR_TXT} Destination folder ID: {DESTINATION_FOLDER_ID_ENV_VAR}")
+# Define the Logging function
+def initialize_logging():
+    """
+    Initializes logging.
+    """
+    configure_logging(LOG_FILE_PATH)
+
+# Call the function
+initialize_logging()
+
+def check_environment_variables():
+    """
+     Checks if the environment variables are set.
+
+     Raises: Error if environment variables are not found in config file.
+    """
+    # Check if the environment variables are set
+    required_variables = [
+        'CLIENT_ID_ENV_VAR',
+        'SOURCE_FOLDER_ID_ENV_VAR',
+        'DESTINATION_FOLDER_ID_ENV_VAR'
+        ]
+    for var_name in required_variables:
+        env_var = config.get('EnvironmentVariables', var_name, fallback=f'GOOGLE_DRIVE_{var_name}')
+        env_var_value = os.environ.get(env_var)
+        if not env_var_value:
+            logging.error("%s %s : %s", MISSING_ENVAR_TXT, env_var, var_name)
+            raise ValueError(f"{MISSING_ENVAR_TXT} {env_var}: {var_name}")
 
 # Create a flow to handle the OAuth2 authentication
 def authenticate_and_authorize(client_id_file, api_scopes):
@@ -61,19 +94,35 @@ def authenticate_and_authorize(client_id_file, api_scopes):
     Handles OAuth2 authentication and authorization.
 
     Args:
-        client_id_file (str): The path to the client ID JSON file.
+        client_id_file (str): The environment variable for the client ID JSON file.
         api_scopes (list): The list of API scopes.
 
     Returns:
         credentials (google.oauth2.credentials.Credentials): The authorized credentials.
     """
+    client_id_file = os.environ.get(client_id_file)
+
+    if not client_id_file:
+        error_message = f"{MISSING_ENVAR_TXT} Google Drive API Client ID JSON: {client_id_file}"
+        logging.error(error_message)
+        raise ValueError(error_message)
+
     flow = InstalledAppFlow.from_client_secrets_file(client_id_file, api_scopes)
-    auth_credentials = flow.run_local_server()
+
+    try:
+        auth_credentials = flow.run_local_server()
+    except DefaultCredentialsError as default_credentials_error:
+        logging.error("Authentication failed: Credentials - %s", default_credentials_error)
+    except GoogleAuthError as auth_error:
+        logging.error("Authentication failed: %s", auth_error)
+    else:
+        logging.error("Authentication failed: Unexpected Error - please try again")
 
     if credentials and auth_credentials.valid:
         return auth_credentials
     return None
 
+# Create a Drive API service object
 def create_drive_service(valid_credentials):
     """
     Creates a Google Drive API service object.
@@ -87,7 +136,7 @@ def create_drive_service(valid_credentials):
     return build('drive', 'v3', credentials=valid_credentials)
 
 # Authenticate and authorize the user
-authed_credentials = authenticate_and_authorize(CLIENT_ID_FILE, SCOPES)
+authed_credentials = authenticate_and_authorize(client_id_env_var, SCOPES)
 
 # Check if credentials are valid
 if authed_credentials:
@@ -95,11 +144,22 @@ if authed_credentials:
 else:
     logging.error("Authorization failed.")
 
-# MAGIC Constants - to improve readability & linting
-# Disable pylint for no-member at the function level
+# DECLARE FOLDER VARIABLES
 # pylint: disable=no-member
-source_folder_name = service.files().get(fileId=source_folder_id, fields='name').execute()
-destination_folder_name = service.files().get(fileId=destination_folder_id, fields='name').execute()
+try:
+    SOURCE_FOLDER_NAME = (
+        service.files().get(fileId=source_folder_id_env_var, fields='name').execute()
+    )
+    DESTINATION_FOLDER_NAME = (
+        service.files().get(fileId=destination_folder_id_env_var, fields='name').execute()
+    )
+except HttpError as e:
+    logging.error("Error retrieving folder names: %s", e)
+    SOURCE_FOLDER_NAME = "Unknown Source Folder"
+    DESTINATION_FOLDER_NAME = "Unknown Destination Folder"
+
+logging.info("Source Folder Name: %s",{SOURCE_FOLDER_NAME.get('name', 'Unknown')})
+logging.info("Destination Folder Name: %s", {DESTINATION_FOLDER_NAME.get('name', 'Unknown')})
 
 # Define a function to count files and folders
 def count_files_and_folders(folder_id):
@@ -161,7 +221,7 @@ def count_child_objects(folder_id):
 # Define a function to copy child objects recursively
 def copy_child_objects(src_folder_id, dest_folder_id, max_retries=1):
     """
-    Copies all child objects (files and folders) from source folder to a destination folder.
+    Copies all child objects (files and folders) from the source folder to a destination folder.
     Includes a static retry mechanism for file copy failures.
 
     Args:
@@ -184,21 +244,25 @@ def copy_child_objects(src_folder_id, dest_folder_id, max_retries=1):
                     # Attempt to copy the file
                     service.files().copy(fileId=file['id'], body=file_metadata).execute()
                     # If the copy is successful, break out of the retry loop
+                    logging.info("File copied successfully: %s", file['name'])
                     break
-                except HttpError as error_msg:
+                except HttpError as http_error:
+                    logging.error("Error listing files in source folder: %s", http_error)
                     if retry_attempt < max_retries - 1:
                         # Log the error and retry
                         logging.error("Error copying file %s, retrying... (%d/%d)",
                                       file['name'], retry_attempt + 1, max_retries)
                     else:
                         # If all retries fail, log the error and move on to the next file
-                        logging.error("Error copying file %s after %d retries: %s",
-                                      file['name'], max_retries, error_msg)
+                        logging.error(
+                            "Error copying file %s after %d retries: %s",
+                            file['name'],
+                            max_retries,
+                            http_error
+                            )
                         break
-
-    except HttpError as error_msg:
-        # Handle errors related to copying files
-        handle_copy_error(file['name'], error_msg)
+    except HttpError as http_error:
+        handle_copy_error(file['name'], http_error)
 
     # List folders in the source folder
     query = f"'{src_folder_id}' in parents and mimeType = '{MIME_FOLDER}'"
@@ -261,49 +325,48 @@ def add_child_folders(folder_id):
         num_files, num_folders = count_child_objects(folder_id)
         WRITER.writerow([folder['name'], num_files, num_folders])
 
-# Enable pylint for no-member again
+# Enable pylint for no-member again // FIXME: pylint isue
 # pylint: enable=no-member
 
 logging.info("STARTING ASSESSMENTS...")
 # ASSESSEMENT 1 - Write the results to a CSV file
-CSV_FILE = './outputs/assessment-1.csv'
-with open(CSV_FILE, 'w', newline='', encoding='utf-8') as output_file:
+CSV_FILE_ASSESSMENT_1 = os.path.join(OUTPUTS_DIRECTORY, 'assessment-1.csv')
+with open(CSV_FILE_ASSESSMENT_1, 'w', newline='', encoding='utf-8') as output_file:
     # Get the name of the source folder
-    total_num_files, total_num_folders = count_child_objects(source_folder_id)
+    total_num_files, total_num_folders = count_child_objects(source_folder_id_env_var)
     WRITER = csv.writer(output_file)
     WRITER.writerow(['Folder Name', 'Number of Files', 'Number of Folders'])
-    WRITER.writerow([source_folder_name['name'], total_num_files, total_num_folders])
+    WRITER.writerow([SOURCE_FOLDER_NAME['name'], total_num_files, total_num_folders])
 
 # ASSESSEMENT 2 - Write the results to a CSV file
-CSV_FILE = './outputs/assessment-2.csv'
-with open(CSV_FILE, 'w', newline='', encoding='utf-8') as output_file:
+CSV_FILE_ASSESSMENT_2 = os.path.join(OUTPUTS_DIRECTORY, 'assessment-2.csv')
+with open(CSV_FILE_ASSESSMENT_2, 'w', newline='', encoding='utf-8') as output_file:
     WRITER = csv.writer(output_file)
     WRITER.writerow(['Folder Name', 'Number of Files', 'Number of Child Folders'])
     # Write the Total at the top of the CSV
-    total_num_files, total_num_folders = count_child_objects(source_folder_id)
+    total_num_files, total_num_folders = count_child_objects(source_folder_id_env_var)
     WRITER.writerow(['TOTAL', total_num_files, total_num_folders])
-    add_child_folders(source_folder_id)
+    add_child_folders(source_folder_id_env_var)
 
-# Copy all child objects (including nested folders and files) to the new top-level folder
-
-logging.info("STARTING COPY TO %s...", destination_folder_name['name'])
-copy_child_objects(source_folder_id, destination_folder_id)
+# MAIN - Copy all child objects (including nested folders and files) to the new top-level folder
+logging.info("COPIED: %s to %s", SOURCE_FOLDER_NAME['name'], DESTINATION_FOLDER_NAME['name'])
+copy_child_objects(source_folder_id_env_var, destination_folder_id_env_var)
 logging.info("COPY COMPLETED!")
 
 # ASSESSEMENT 3 - Write the results to a CSV file
-CSV_FILE = './outputs/assessment-3.csv'
-with open(CSV_FILE, 'w', newline='', encoding='utf-8') as output_file:
+CSV_FILE_ASSESSMENT_3 = os.path.join(OUTPUTS_DIRECTORY, 'assessment-3.csv')
+with open(CSV_FILE_ASSESSMENT_3, 'w', newline='', encoding='utf-8') as output_file:
     WRITER = csv.writer(output_file)
     WRITER.writerow(['Folder Name', 'Number of Files', 'Number of Child Folders'])
 
     # Write the Total at the top of the CSV
-    total_num_files, total_num_folders = count_child_objects(destination_folder_id)
+    total_num_files, total_num_folders = count_child_objects(destination_folder_id_env_var)
     WRITER.writerow(['TOTAL', total_num_files, total_num_folders])
-    add_child_folders(destination_folder_id)
+    add_child_folders(destination_folder_id_env_var)
 
 logging.info("ASSESSMENTS COMPLETED!")
 
-logging.info("STARTING VALIDATION...")
+
 # Compare the two assessments CSV files
 def compare_csv_files(file1, file2):
     """
@@ -313,6 +376,7 @@ def compare_csv_files(file1, file2):
         file1 (str): The path to the first CSV file.
         file2 (str): The path to the second CSV file.
     """
+    logging.info("STARTING VALIDATION...")
     # Read the CSV files into pandas DataFrames
     assessment2 = pd.read_csv(file1)
     assessment3 = pd.read_csv(file2)
@@ -321,16 +385,13 @@ def compare_csv_files(file1, file2):
     if assessment2.equals(assessment3):
         logging.info("VALIDATION SUCCESSFUL!")
     else:
-        logging.error("VALIDATION FAILED - Source & Destination folder counts do not match.")
-        print("ERROR: VALIDATION FAILED!")
+        logging.error("VALIDATION FAILED - Source and Destination folder counts do not match.")
+        print("ERROR: VALIDATION FAILED - Source and Destination folder counts do not match.")
 
-# Load source and destination file count CSV reports
-OUTPUT_2 = './outputs/assessment-2.csv'
-OUTPUT_3 = './outputs/assessment-3.csv'
 
-compare_csv_files(OUTPUT_2, OUTPUT_3)
+compare_csv_files(CSV_FILE_ASSESSMENT_2, CSV_FILE_ASSESSMENT_3)
 
 # FINISH SCRIPT
-logging.info("COPIED: " + source_folder_name['name'] +
-             " to " + destination_folder_name['name'])
+logging.info("COPIED: " + SOURCE_FOLDER_NAME['name'] +
+             " to " + DESTINATION_FOLDER_NAME['name'])
 print("SCRIPT COMPLETED!")
