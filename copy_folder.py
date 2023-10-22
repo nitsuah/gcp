@@ -17,10 +17,10 @@ from googleapiclient.errors import HttpError  # pylint: disable=ungrouped-import
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 # Script Constants
-MISSING_ENVAR_TXT = 'Missing environment variable for'
-MIME_FOLDER = 'application/vnd.google-apps.folder'
 OUTPUTS_DIRECTORY = os.path.join(os.getcwd(), 'outputs')
 os.makedirs(OUTPUTS_DIRECTORY, exist_ok=True)
+MISSING_ENVAR_TXT = 'Missing environment variable for'
+MIME_FOLDER = 'application/vnd.google-apps.folder'
 
 # Create a logger for better error tracking
 TIMESTAMP = datetime.datetime.now().strftime('%Y%m%d%H%M')
