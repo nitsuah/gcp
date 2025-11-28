@@ -25,4 +25,4 @@
 - [ ] Support for selective file type copying
 - [ ] Dry-run mode for testing
 - [ ] Enhanced error recovery mechanisms
-- [ ] Web UI for easier configuration
+- [ ] Web GUI for easier configuration
