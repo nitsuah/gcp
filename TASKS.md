@@ -20,7 +20,7 @@
 
 ## In Progress
 
-- [ ] Update documentation to meet Overseer compliance standards
+- [ ] Update documentation to meet Overseer compliance standards and expose areas of improvement
 
 ## Todo
 
@@ -30,3 +30,4 @@
 - [ ] Create unit tests for core functions
 - [ ] Add support for selective file type filtering
 - [ ] Improve error recovery with configurable retry strategies
+- [ ] Add GUI for starting and monitoring ongoing operations
