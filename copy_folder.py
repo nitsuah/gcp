@@ -6,7 +6,6 @@ import csv
 import logging
 import datetime
 import pandas as pd
-from google.oauth2 import credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError # pylint: disable=ungrouped-imports
@@ -70,7 +69,7 @@ def authenticate_and_authorize(client_id_file, api_scopes):
     flow = InstalledAppFlow.from_client_secrets_file(client_id_file, api_scopes)
     auth_credentials = flow.run_local_server()
 
-    if credentials and auth_credentials.valid:
+    if auth_credentials and auth_credentials.valid:
         return auth_credentials
     return None
 
@@ -94,6 +93,7 @@ if authed_credentials:
     service = create_drive_service(authed_credentials)
 else:
     logging.error("Authorization failed.")
+    raise RuntimeError("Failed to authenticate with Google Drive API")
 
 # MAGIC Constants - to improve readability & linting
 # Disable pylint for no-member at the function level
@@ -266,8 +266,8 @@ def add_child_folders(folder_id):
 
 logging.info("STARTING ASSESSMENTS...")
 # ASSESSEMENT 1 - Write the results to a CSV file
-CSV_FILE = './outputs/assessment-1.csv'
-with open(CSV_FILE, 'w', newline='', encoding='utf-8') as output_file:
+csv_file = './outputs/assessment-1.csv'
+with open(csv_file, 'w', newline='', encoding='utf-8') as output_file:
     # Get the name of the source folder
     total_num_files, total_num_folders = count_child_objects(source_folder_id)
     WRITER = csv.writer(output_file)
@@ -275,8 +275,8 @@ with open(CSV_FILE, 'w', newline='', encoding='utf-8') as output_file:
     WRITER.writerow([source_folder_name['name'], total_num_files, total_num_folders])
 
 # ASSESSEMENT 2 - Write the results to a CSV file
-CSV_FILE = './outputs/assessment-2.csv'
-with open(CSV_FILE, 'w', newline='', encoding='utf-8') as output_file:
+csv_file = './outputs/assessment-2.csv'
+with open(csv_file, 'w', newline='', encoding='utf-8') as output_file:
     WRITER = csv.writer(output_file)
     WRITER.writerow(['Folder Name', 'Number of Files', 'Number of Child Folders'])
     # Write the Total at the top of the CSV
@@ -291,8 +291,8 @@ copy_child_objects(source_folder_id, destination_folder_id)
 logging.info("COPY COMPLETED!")
 
 # ASSESSEMENT 3 - Write the results to a CSV file
-CSV_FILE = './outputs/assessment-3.csv'
-with open(CSV_FILE, 'w', newline='', encoding='utf-8') as output_file:
+csv_file = './outputs/assessment-3.csv'
+with open(csv_file, 'w', newline='', encoding='utf-8') as output_file:
     WRITER = csv.writer(output_file)
     WRITER.writerow(['Folder Name', 'Number of Files', 'Number of Child Folders'])
 
