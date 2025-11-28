@@ -6,7 +6,6 @@ import csv
 import logging
 import datetime
 import pandas as pd
-from google.oauth2 import credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError # pylint: disable=ungrouped-imports
@@ -70,7 +69,7 @@ def authenticate_and_authorize(client_id_file, api_scopes):
     flow = InstalledAppFlow.from_client_secrets_file(client_id_file, api_scopes)
     auth_credentials = flow.run_local_server()
 
-    if credentials and auth_credentials.valid:
+    if auth_credentials and auth_credentials.valid:
         return auth_credentials
     return None
 
