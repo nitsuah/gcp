@@ -20,7 +20,7 @@
 
 - **Recursive Copying**: Copies all files and folders from source to destination while preserving directory structure
 - **Folder Enumeration**: Counts files and folders at any depth level
-- **Child Object Tracking**: Recursively counts and tracks all child files and subfolders
+- **Child Object Tracking**: Recursively counts and tracks all child files and sub-folders
 - **Folder Structure Preservation**: Maintains original folder hierarchy during copy operations
 
 ### 🛡️ Error Handling & Reliability
