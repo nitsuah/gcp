@@ -1,0 +1,73 @@
+# CODEOWNERS
+
+> This file defines who owns and should review changes to specific files or directories.
+> Learn more: [CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
+
+## Global owners - these users will be requested for review on all PRs
+
+* @nitsuah
+
+## Documentation
+
+# Documentation files in markdown format
+*.md @nitsuah
+# Documentation directory
+/docs/ @nitsuah
+
+## Configuration files
+
+# JSON configuration files
+*.json @nitsuah
+# YAML configuration files
+*.yaml @nitsuah
+# YML configuration files
+*.yml @nitsuah
+# TOML configuration files
+*.toml @nitsuah
+
+## CI/CD workflows
+
+# GitHub Actions workflows
+/.github/workflows/ @nitsuah
+
+## Source code
+
+# General source code directory
+/src/ @nitsuah
+# Library directory
+/lib/ @nitsuah
+# Application directory
+/app/ @nitsuah
+# Component directory
+/components/ @nitsuah
+# Python source files
+*.py @nitsuah
+
+## Tests
+
+# Tests directory
+/tests/ @nitsuah
+# Another common tests directory name
+/test/ @nitsuah
+# Files with .test. in the name
+*.test.* @nitsuah
+# Files with .spec. in the name
+*.spec.* @nitsuah
+
+## Infrastructure & deployment
+
+# Infrastructure configuration files
+/infrastructure/ @nitsuah
+# Terraform configuration files
+/terraform/ @nitsuah
+# Dockerfile
+Dockerfile @nitsuah
+# Docker Compose files
+docker-compose*.yml @nitsuah
+
+## Security-sensitive files
+
+# Security policy file
+/SECURITY.md @nitsuah
+# GitHub Actions workflows (redundant, but explicit for security)
+/.github/workflows/ @nitsuah
