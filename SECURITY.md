@@ -54,4 +54,4 @@ When we receive a security bug report, we will:
 1. Confirm the problem and determine affected versions.
 2. Audit code to find any similar problems.
 3. Prepare fixes for all supported versions.
-4. Release new versions as soon as possible. We will publicly disclose the vulnerability details [TODO: NUMBER] days after a fix is available, unless otherwise required by legal or business considerations.
+4. Release new versions as soon as possible. We will publicly disclose the vulnerability details 90 days after a fix is available, unless otherwise required by legal or business considerations.
