@@ -35,7 +35,7 @@ When reporting a vulnerability, please include:
 
 - **Initial Response**: Within 48 hours
 - **Status Update**: Within 7 days
-- **Fix Timeline**: Depends on severity and complexity. We aim to provide a fix or mitigation within [TODO: TIMEFRAME_FOR_FIX] for critical vulnerabilities.
+- **Fix Timeline**: Depends on severity and complexity. We aim to provide a fix or mitigation within 30 days for critical vulnerabilities.
 
 ## Security Best Practices
 
