@@ -1,0 +1,31 @@
+repos:
+  # General hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Python-specific hooks
+  - repo: https://github.com/psf/black
+    rev: 24.2.0  # Use a recent stable version
+    hooks:
+      - id: black
+        language_version: python3
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2 # Use a recent stable version
+    hooks:
+      - id: isort
+        name: isort (python3)
+        language_version: python3
+
+  - repo: https://github.com/pre-commit/mirrors-pylint
+    rev: v3.0.1 # Use a recent stable version
+    hooks:
+      - id: pylint
+        args: ["--rcfile=.pylintrc"] # Optional: specify pylint config file
