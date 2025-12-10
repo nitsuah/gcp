@@ -2,7 +2,6 @@
 # .pylintrc
 
 [MASTER]
-ignore-files=TODO: ADD_IGNORE_FILES_HERE
 ignore=node_modules,dist,build
 
 [MESSAGES CONTROL]
