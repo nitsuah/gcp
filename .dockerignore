@@ -1,0 +1,61 @@
+# Git files
+.git
+.gitignore
+.github
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Sensitive files
+credentials.json
+client_secret*.json
+token.json
+*.env
+.env.*
+
+# Documentation
+*.md
+docs/
+CHANGELOG.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+FEATURES.md
+LICENSE
+METRICS.md
+README.md
+ROADMAP.md
+SECURITY.md
+TASKS.md
+
+# Test and build artifacts
+.pytest_cache
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info
+
+# Outputs (these may contain sensitive data)
+outputs/
+
+# Config files not needed in container
+vitest.config.ts
+eslint.config.mjs
+.pylintrc
+.pre-commit-config.yaml

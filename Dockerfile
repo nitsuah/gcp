@@ -34,15 +34,5 @@ RUN chown -R appuser:appgroup /app
 # Switch to non-root user
 USER appuser
 
-# Expose the application port
-EXPOSE 8000
-
-# Define environment variable (if needed)
-ENV FLASK_APP=main.py  # Or whatever your main application file is
-
-# Health check (basic example - adjust based on your app's health endpoint)
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD python -c "import http.client; conn = http.client.HTTPConnection('localhost', 8000); conn.request('GET', '/'); r1 = conn.getresponse(); exit(0 if r1.status == 200 else 1)"
-
-# Command to run the application
-CMD ["python", "main.py"] # Or whatever command starts your app
+# Command to run the Google Drive copy utility
+CMD ["python", "copy_folder.py"]
