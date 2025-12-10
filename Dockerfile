@@ -22,7 +22,10 @@ WORKDIR /app
 RUN groupadd --system appgroup && useradd --system --gid appgroup appuser
 
 # Copy application source code
-COPY . .
+COPY main.py .
+# If you have a src directory, copy it as well
+COPY src/ ./src/
+# Add other necessary files/directories as needed
 
 # Copy dependencies from the previous stage
 COPY --from=deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
