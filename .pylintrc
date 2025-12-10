@@ -1,0 +1,16 @@
+# .pylintrc
+
+[MASTER]
+ignore=node_modules,dist,build
+
+[MESSAGES CONTROL]
+disable=
+    too-many-arguments,
+    too-many-locals,
+    too-many-branches,
+    too-many-statements,
+    R0903, # Too few public methods
+    W0511, # TODO or FIXME found
+    W0703, # Catching too general exception Exception
+    W1203, # Using an f-string that does not have any interpolated variables
+    C0301  # Line too long
