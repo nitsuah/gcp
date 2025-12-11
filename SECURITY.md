@@ -44,8 +44,11 @@ When contributing to this project:
 - Keep dependencies up to date
 - Follow secure coding practices
 - Use environment variables for sensitive data
-- Never commit API keys, passwords, or tokens
+- **Never commit API keys, passwords, or tokens**
+- **Never commit GOOGLE_APPLICATION_CREDENTIALS or service account keys**
 - Review code changes for security implications
+- Always use `.env` files (never commit them - ensure `.env` is in `.gitignore`)
+- Use `.env.example` to document required environment variables without exposing values
 
 ## Disclosure Policy
 

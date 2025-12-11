@@ -334,3 +334,13 @@ compare_csv_files(OUTPUT_2, OUTPUT_3)
 logging.info("COPIED: " + source_folder_name['name'] +
              " to " + destination_folder_name['name'])
 print("SCRIPT COMPLETED!")
+
+def main():
+    """Main entry point for CLI."""
+    print("Google Drive Report & Copy Tool")
+    print("Running copy_folder script...")
+    # Script already runs when module is imported
+    # This is kept for backwards compatibility
+
+if __name__ == "__main__":
+    main()

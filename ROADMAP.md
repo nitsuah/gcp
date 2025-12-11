@@ -20,9 +20,10 @@
 
 ## 2026: 🔮 Enhancements
 
+- [ ] Web GUI for easier configuration (oauth, folder selection, tracking)
 - [ ] Progress tracking for large folder copies
 - [ ] Parallel processing for faster copying
 - [ ] Support for selective file type copying
 - [ ] Dry-run mode for testing
 - [ ] Enhanced error recovery mechanisms
-- [ ] Web GUI for easier configuration
+- [ ] Unit tests for core functions

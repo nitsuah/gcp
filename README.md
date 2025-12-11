@@ -17,22 +17,81 @@
 - [Login to GCP & Create project](https://console.cloud.google.com/getting-started?organizationId=0)
 - [Create Google OAuth 2.0 Client IDs](https://console.cloud.google.com/apis/credentials/consent?project=project-id)
 
-## Setup local environment
+## Installation
 
-- [Create Repo](https://github.com/nitsuah/gcp)
-- Local dev setup (see common imports below, but I used wsl)
+### Prerequisites
+- Python 3.10 or higher
+- Google Cloud Platform account with Drive API enabled
+- OAuth 2.0 Client ID credentials ([setup guide](https://console.cloud.google.com/apis/credentials))
+
+### Install from source
 
 ```bash
-sudo apt-get update;
-sudo apt-get install upgrade;
-sudo apt-get install python3;
-sudo apt-get install python3-pip;
-sudo pip install csv logging datetime pandas;
-sudo pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib;
-export GOOGLE_DRIVE_FOLDER_ID='source-folder-id';
-export GOOGLE_DRIVE_DESTINATION_FOLDER_ID='destination-folder-id';
-export GOOGLE_DRIVE_CLIENT_ID_FILE='/your/path/to/client_id.json';
+# Clone the repository
+git clone https://github.com/nitsuah/gcp.git
+cd gcp
+
+# Install in development mode
+pip install -e ".[dev]"
+
+# Verify installation
+drive-report --help
 ```
+
+### Required API Scopes
+- `https://www.googleapis.com/auth/drive`
+- `https://www.googleapis.com/auth/drive.metadata.readonly`
+
+## Configuration
+
+Set the following environment variables:
+
+```bash
+export GOOGLE_DRIVE_CLIENT_ID_FILE='/path/to/client_id.json'
+export GOOGLE_DRIVE_SOURCE_FOLDER_ID='your-source-folder-id'
+export GOOGLE_DRIVE_DESTINATION_FOLDER_ID='your-destination-folder-id'
+```
+
+Or create a `.env` file (see `.env.example`):
+
+```bash
+GOOGLE_DRIVE_CLIENT_ID_FILE=/path/to/credentials.json
+GOOGLE_DRIVE_SOURCE_FOLDER_ID=abc123xyz
+GOOGLE_DRIVE_DESTINATION_FOLDER_ID=xyz456abc
+```
+
+## Usage
+
+### CLI Command
+
+```bash
+drive-report
+```
+
+### Python Module
+
+```python
+from gcp.copy_folder import count_files_and_folders, copy_child_objects
+
+# Count files in a folder
+num_files, num_folders = count_files_and_folders('folder_id')
+
+# Copy folder contents
+copy_child_objects('source_id', 'destination_id')
+```
+
+## Output Schema
+
+### CSV Format
+```csv
+Folder Name,File Count,Folder Count
+Design,15,3
+Documentation,28,5
+TOTAL,43,8
+```
+
+### JSON Format
+See `examples/report-sample.json` for complete structure.
 
 ## Outputs
 
