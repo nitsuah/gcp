@@ -39,7 +39,7 @@ logging.basicConfig(filename=LOG_FILE_PATH, level=logging.INFO, format=LOG_FILE_
 
 # Module-level variables will be initialized in main()
 # This prevents execution on import
-service = None
+service = None  # pylint: disable=invalid-name
 
 # Create a flow to handle the OAuth2 authentication
 def authenticate_and_authorize(client_id_file, api_scopes):
@@ -273,15 +273,15 @@ def compare_csv_files(file1, file2):
 def main():
     """Main entry point for CLI."""
     global service  # pylint: disable=global-statement
-    
+
     print("Google Drive Report & Copy Tool")
     print("Running copy_folder script...")
-    
+
     # Read environment variables
     client_id_file = os.environ.get(CLIENT_ID_ENV_VAR)
     source_folder_id = os.environ.get(SOURCE_FOLDER_ID_ENV_VAR)
     destination_folder_id = os.environ.get(DESTINATION_FOLDER_ID_ENV_VAR)
-    
+
     # Check if the environment variables are set
     if not client_id_file:
         raise ValueError(f"{MISSING_ENVAR_TXT} Google Drive API Client ID JSON: {CLIENT_ID_ENV_VAR}")
@@ -289,21 +289,23 @@ def main():
         raise ValueError(f"{MISSING_ENVAR_TXT} Source folder ID: {SOURCE_FOLDER_ID_ENV_VAR}")
     if not destination_folder_id:
         raise ValueError(f"{MISSING_ENVAR_TXT} Destination folder ID: {DESTINATION_FOLDER_ID_ENV_VAR}")
-    
+
     # Authenticate and authorize the user
     authed_credentials = authenticate_and_authorize(client_id_file, SCOPES)
-    
+
     # Check if credentials are valid
     if authed_credentials:
         service = create_drive_service(authed_credentials)
     else:
         logging.error("Authorization failed.")
         raise RuntimeError("Failed to authenticate with Google Drive API")
-    
+
     # Get folder names
+    # pylint: disable=no-member
     source_folder_name = service.files().get(fileId=source_folder_id, fields='name').execute()
     destination_folder_name = service.files().get(fileId=destination_folder_id, fields='name').execute()
-    
+    # pylint: enable=no-member
+
     logging.info("STARTING ASSESSMENTS...")
     # ASSESSEMENT 1 - Write the results to a CSV file
     csv_file = './outputs/assessment-1.csv'
@@ -313,7 +315,7 @@ def main():
         writer = csv.writer(output_file)
         writer.writerow(['Folder Name', 'Number of Files', 'Number of Folders'])
         writer.writerow([source_folder_name['name'], total_num_files, total_num_folders])
-    
+
     # ASSESSEMENT 2 - Write the results to a CSV file
     csv_file = './outputs/assessment-2.csv'
     with open(csv_file, 'w', newline='', encoding='utf-8') as output_file:
@@ -323,32 +325,32 @@ def main():
         total_num_files, total_num_folders = count_child_objects(source_folder_id, service)
         writer.writerow(['TOTAL', total_num_files, total_num_folders])
         add_child_folders(source_folder_id, writer, service)
-    
+
     # Copy all child objects (including nested folders and files) to the new top-level folder
     logging.info("STARTING COPY TO %s...", destination_folder_name['name'])
     copy_child_objects(source_folder_id, destination_folder_id, service)
     logging.info("COPY COMPLETED!")
-    
+
     # ASSESSEMENT 3 - Write the results to a CSV file
     csv_file = './outputs/assessment-3.csv'
     with open(csv_file, 'w', newline='', encoding='utf-8') as output_file:
         writer = csv.writer(output_file)
         writer.writerow(['Folder Name', 'Number of Files', 'Number of Child Folders'])
-        
+
         # Write the Total at the top of the CSV
         total_num_files, total_num_folders = count_child_objects(destination_folder_id, service)
         writer.writerow(['TOTAL', total_num_files, total_num_folders])
         add_child_folders(destination_folder_id, writer, service)
-    
+
     logging.info("ASSESSMENTS COMPLETED!")
-    
+
     logging.info("STARTING VALIDATION...")
     # Load source and destination file count CSV reports
     output_2 = './outputs/assessment-2.csv'
     output_3 = './outputs/assessment-3.csv'
-    
+
     compare_csv_files(output_2, output_3)
-    
+
     # FINISH SCRIPT
     logging.info("COPIED: %s to %s", source_folder_name['name'], destination_folder_name['name'])
     print("SCRIPT COMPLETED!")

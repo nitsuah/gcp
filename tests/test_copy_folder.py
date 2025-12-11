@@ -33,9 +33,9 @@ class TestAuthentication:
         mock_creds = Mock()
         mock_creds.valid = True
         mock_flow.from_client_secrets_file.return_value.run_local_server.return_value = mock_creds
-        
+
         result = authenticate_and_authorize('fake_client.json', ['scope1', 'scope2'])
-        
+
         assert result == mock_creds
         assert result.valid is True
 
@@ -45,18 +45,18 @@ class TestAuthentication:
         mock_creds = Mock()
         mock_creds.valid = False
         mock_flow.from_client_secrets_file.return_value.run_local_server.return_value = mock_creds
-        
+
         result = authenticate_and_authorize('fake_client.json', ['scope1'])
-        
+
         assert result is None
 
     @patch('gcp.copy_folder.build')
     def test_create_drive_service(self, mock_build, mock_credentials):
         """Test Drive service creation."""
         mock_build.return_value = 'mock_service'
-        
+
         result = create_drive_service(mock_credentials)
-        
+
         mock_build.assert_called_once_with('drive', 'v3', credentials=mock_credentials)
         assert result == 'mock_service'
 
@@ -70,9 +70,9 @@ class TestFileOperations:
             'files': [],
             'nextPageToken': None
         }
-        
+
         num_files, num_folders = count_files_and_folders('fake_folder_id', mock_service)
-        
+
         assert num_files == 0
         assert num_folders == 0
 
@@ -95,9 +95,9 @@ class TestFileOperations:
                 'nextPageToken': None
             }
         ]
-        
+
         num_files, num_folders = count_files_and_folders('fake_folder_id', mock_service)
-        
+
         assert num_files == 2
         assert num_folders == 2
 
@@ -118,9 +118,9 @@ class TestFileOperations:
                 'nextPageToken': None
             }
         ]
-        
+
         num_files, num_folders = count_files_and_folders('fake_folder_id', mock_service)
-        
+
         assert num_files == 1
         assert num_folders == 1
 
@@ -131,22 +131,22 @@ class TestOutputValidation:
     def test_csv_output_format(self, tmp_path):
         """Test that CSV output has expected structure."""
         import csv
-        
+
         # Expected CSV structure
         expected_headers = ['Folder Name', 'File Count', 'Folder Count']
         test_csv = tmp_path / "test_output.csv"
-        
+
         with open(test_csv, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(expected_headers)
             writer.writerow(['TestFolder', '10', '5'])
-        
+
         # Verify structure
         with open(test_csv, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
             headers = next(reader)
             assert headers == expected_headers
-            
+
             data_row = next(reader)
             assert len(data_row) == 3
             assert data_row[0] == 'TestFolder'
