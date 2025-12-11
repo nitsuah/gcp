@@ -71,38 +71,45 @@ class TestFileOperations:
             'nextPageToken': None
         }
         
-        with patch('gcp.copy_folder.service', mock_service):
-            num_files, num_folders = count_files_and_folders('fake_folder_id')
+        num_files, num_folders = count_files_and_folders('fake_folder_id', mock_service)
         
         assert num_files == 0
         assert num_folders == 0
 
     def test_count_files_and_folders_with_items(self, mock_service):
         """Test counting files and folders."""
-        mock_service.files().list().execute.return_value = {
-            'files': [
-                {'id': '1', 'mimeType': 'application/vnd.google-apps.folder', 'name': 'folder1'},
-                {'id': '2', 'mimeType': 'text/plain', 'name': 'file1.txt'},
-                {'id': '3', 'mimeType': 'application/vnd.google-apps.folder', 'name': 'folder2'},
-                {'id': '4', 'mimeType': 'application/pdf', 'name': 'file2.pdf'},
-            ],
-            'nextPageToken': None
-        }
+        # Mock two separate queries: first for files, then for folders
+        mock_service.files().list().execute.side_effect = [
+            {
+                'files': [
+                    {'id': '2', 'mimeType': 'text/plain', 'name': 'file1.txt'},
+                    {'id': '4', 'mimeType': 'application/pdf', 'name': 'file2.pdf'},
+                ],
+                'nextPageToken': None
+            },
+            {
+                'files': [
+                    {'id': '1', 'mimeType': 'application/vnd.google-apps.folder', 'name': 'folder1'},
+                    {'id': '3', 'mimeType': 'application/vnd.google-apps.folder', 'name': 'folder2'},
+                ],
+                'nextPageToken': None
+            }
+        ]
         
-        with patch('gcp.copy_folder.service', mock_service):
-            num_files, num_folders = count_files_and_folders('fake_folder_id')
+        num_files, num_folders = count_files_and_folders('fake_folder_id', mock_service)
         
         assert num_files == 2
         assert num_folders == 2
 
     def test_count_files_and_folders_pagination(self, mock_service):
-        """Test counting with pagination."""
+        """Test counting with separate queries for files and folders."""
+        # Mock two separate queries: first for files (excluding folders), then for folders only
         mock_service.files().list().execute.side_effect = [
             {
                 'files': [
                     {'id': '1', 'mimeType': 'text/plain', 'name': 'file1.txt'},
                 ],
-                'nextPageToken': 'token1'
+                'nextPageToken': None
             },
             {
                 'files': [
@@ -112,8 +119,7 @@ class TestFileOperations:
             }
         ]
         
-        with patch('gcp.copy_folder.service', mock_service):
-            num_files, num_folders = count_files_and_folders('fake_folder_id')
+        num_files, num_folders = count_files_and_folders('fake_folder_id', mock_service)
         
         assert num_files == 1
         assert num_folders == 1
