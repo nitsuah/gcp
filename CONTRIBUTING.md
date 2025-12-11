@@ -112,9 +112,14 @@ Currently, this project does not have a formal test suite. When adding tests:
 - [ ] Code follows PEP 8 style guidelines
 - [ ] Pylint checks pass
 - [ ] Bandit security scan passes
-- [ ] Documentation is updated (README, ABOUT, CHANGELOG)
+- [ ] Unit tests passing (if tests exist)
+- [ ] CI YAML added/updated (if applicable)
+- [ ] Demo output included (for new features)
+- [ ] Documentation is updated (README, CHANGELOG)
 - [ ] Changes are described clearly in PR description
 - [ ] No hardcoded credentials or sensitive information
+- [ ] Can run `pip install -e .` successfully (if packaging added)
+- [ ] CLI commands work with `--help` flag (if CLI added)
 
 ## Commit Message Format
 
