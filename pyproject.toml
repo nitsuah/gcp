@@ -28,7 +28,7 @@ dev = [
 ]
 
 [project.scripts]
-drive-report = "gcp.copy_folder:main"
+drive-copy = "gcp.copy_folder:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
