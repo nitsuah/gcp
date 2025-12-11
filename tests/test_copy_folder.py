@@ -1,7 +1,7 @@
 """Tests for Google Drive copy_folder functionality."""
-import os
-from unittest.mock import Mock, patch, MagicMock
-import pytest
+# pylint: disable=redefined-outer-name,import-outside-toplevel
+from unittest.mock import Mock, MagicMock, patch
+import pytest  # pylint: disable=import-error
 from gcp.copy_folder import (
     count_files_and_folders,
     authenticate_and_authorize,
