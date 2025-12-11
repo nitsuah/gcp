@@ -1,5 +1,9 @@
 # gcp
 
+<!-- Deployment Status -->
+[![Deploy Status](https://github.com/nitsuah/gcp/actions/workflows/ci.yml/badge.svg)](https://github.com/nitsuah/gcp/actions)
+
+
 **TL;DR-** - A simple script that uses the Google Drive API to generate reports of files and folders and copy all contents from one folder to another.
 
 ## Objectives
