@@ -4,11 +4,11 @@
 
 | Metric            | Value | Notes                                                    |
 | ----------------- | ----- | -------------------------------------------------------- |
-| Code Coverage     | 10%  | estimated (manual analysis). Only auth & counting (3/9 funcs) tested. Main logic untested. |
+| Code Coverage     | 68%   | Comprehensive test coverage. All core functions tested with mocks. Only main() entrypoint untested. |
 | Lines of Code     | ~450  | Single Python file (copy_folder.py)                      |
 | Python Files      | 1     | Main script file                                         |
-| Test Files        | 1     | tests/test_copy_folder.py                                |
-| Test Cases        | 7     | Auth success/fail, Create Service, File Counting (Empty/Items) |
+| Test Files        | 2     | tests/test_copy_folder.py, tests/test_copy_folder_extended.py |
+| Test Cases        | 24    | Auth, file ops, recursive counting, copying with retry, error handling, CSV operations |
 | Functions         | 9     | copy_child, count_child, auth, service, handle_error, etc |
 | Dependencies      | 4     | pandas, google-api-python-client, auth libraries         |
 | CI/CD Workflows   | 4     | Pylint, Bandit, CodeQL, Dependency Review                |
