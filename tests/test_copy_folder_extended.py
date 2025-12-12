@@ -150,7 +150,7 @@ class TestCopyChildObjects:
             {'files': [{'id': 'file1', 'name': 'doc.txt'}]},
             {'files': []},
         ]
-        
+
         # Simulate failure then success
         http_error = HttpError(resp=Mock(status=500), content=b'Server Error')
         mock_service.files().copy().execute.side_effect = [
@@ -169,7 +169,7 @@ class TestCopyChildObjects:
             {'files': [{'id': 'file1', 'name': 'doc.txt'}]},
             {'files': []},
         ]
-        
+
         # Simulate continuous failure
         http_error = HttpError(resp=Mock(status=500), content=b'Server Error')
         mock_service.files().copy().execute.side_effect = http_error
@@ -186,7 +186,7 @@ class TestHandleCopyError:
     def test_handle_copy_error_basic(self, mock_service):
         """Test basic error logging."""
         error = Exception("Test error")
-        
+
         # Should not raise, just log
         handle_copy_error('test_file.txt', error, mock_service)
 
@@ -194,7 +194,7 @@ class TestHandleCopyError:
         """Test handling HttpError with file metadata retrieval."""
         http_error = HttpError(resp=Mock(status=404), content=b'Not Found')
         http_error.__dict__['fileId'] = 'file123'
-        
+
         mock_service.files().get().execute.return_value = {
             'parents': ['parent_folder_id']
         }

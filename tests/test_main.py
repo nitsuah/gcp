@@ -1,10 +1,8 @@
 """
 Tests for the main entry point and CLI functionality of copy_folder.
 """
-import os
 from unittest.mock import patch, mock_open, MagicMock
 import pytest
-from googleapiclient.errors import HttpError
 from gcp.copy_folder import main
 
 
@@ -19,7 +17,7 @@ class TestMainFunction:
     @patch('gcp.copy_folder.compare_csv_files')
     @patch('builtins.open', new_callable=mock_open)
     @patch('os.environ.get')
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,unused-argument
     def test_main_successful_execution(
         self,
         mock_env,
@@ -80,10 +78,11 @@ class TestMainFunction:
     @patch('os.environ.get')
     def test_main_missing_client_id(self, mock_env):
         """Test main function raises error when CLIENT_ID is missing"""
-        mock_env.side_effect = lambda key: {
+        env_vars = {
             'GOOGLE_DRIVE_SOURCE_FOLDER_ID': 'source123',
             'GOOGLE_DRIVE_DESTINATION_FOLDER_ID': 'dest456'
-        }.get(key)
+        }
+        mock_env.side_effect = env_vars.get
 
         with pytest.raises(ValueError, match="Missing environment variable.*Client ID"):
             main()
@@ -91,10 +90,11 @@ class TestMainFunction:
     @patch('os.environ.get')
     def test_main_missing_source_folder_id(self, mock_env):
         """Test main function raises error when SOURCE_FOLDER_ID is missing"""
-        mock_env.side_effect = lambda key: {
+        env_vars = {
             'GOOGLE_DRIVE_CLIENT_ID_FILE': 'client_id.json',
             'GOOGLE_DRIVE_DESTINATION_FOLDER_ID': 'dest456'
-        }.get(key)
+        }
+        mock_env.side_effect = env_vars.get
 
         with pytest.raises(ValueError, match="Missing environment variable.*Source folder"):
             main()
@@ -102,10 +102,11 @@ class TestMainFunction:
     @patch('os.environ.get')
     def test_main_missing_destination_folder_id(self, mock_env):
         """Test main function raises error when DESTINATION_FOLDER_ID is missing"""
-        mock_env.side_effect = lambda key: {
+        env_vars = {
             'GOOGLE_DRIVE_CLIENT_ID_FILE': 'client_id.json',
             'GOOGLE_DRIVE_SOURCE_FOLDER_ID': 'source123'
-        }.get(key)
+        }
+        mock_env.side_effect = env_vars.get
 
         with pytest.raises(ValueError, match="Missing environment variable.*Destination folder"):
             main()
@@ -114,11 +115,12 @@ class TestMainFunction:
     @patch('os.environ.get')
     def test_main_authentication_failure(self, mock_env, mock_auth):
         """Test main function raises RuntimeError when authentication fails"""
-        mock_env.side_effect = lambda key: {
+        env_vars = {
             'GOOGLE_DRIVE_CLIENT_ID_FILE': 'client_id.json',
             'GOOGLE_DRIVE_SOURCE_FOLDER_ID': 'source123',
             'GOOGLE_DRIVE_DESTINATION_FOLDER_ID': 'dest456'
-        }.get(key)
+        }
+        mock_env.side_effect = env_vars.get
 
         # Return None to simulate auth failure
         mock_auth.return_value = None
@@ -134,6 +136,7 @@ class TestMainFunction:
     @patch('gcp.copy_folder.compare_csv_files')
     @patch('builtins.open', new_callable=mock_open)
     @patch('os.environ.get')
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,unused-argument
     def test_main_csv_file_creation(
         self,
         mock_env,
@@ -146,11 +149,12 @@ class TestMainFunction:
         mock_auth
     ):
         """Test that main creates all CSV output files correctly"""
-        mock_env.side_effect = lambda key: {
+        env_vars = {
             'GOOGLE_DRIVE_CLIENT_ID_FILE': 'client_id.json',
             'GOOGLE_DRIVE_SOURCE_FOLDER_ID': 'source123',
             'GOOGLE_DRIVE_DESTINATION_FOLDER_ID': 'dest456'
-        }.get(key)
+        }
+        mock_env.side_effect = env_vars.get
 
         mock_creds = MagicMock()
         mock_auth.return_value = mock_creds
@@ -185,6 +189,7 @@ class TestMainFunction:
     @patch('gcp.copy_folder.compare_csv_files')
     @patch('builtins.open', new_callable=mock_open)
     @patch('os.environ.get')
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,unused-argument
     def test_main_folder_name_retrieval(
         self,
         mock_env,
@@ -197,11 +202,12 @@ class TestMainFunction:
         mock_auth
     ):
         """Test that main retrieves folder names correctly"""
-        mock_env.side_effect = lambda key: {
+        env_vars = {
             'GOOGLE_DRIVE_CLIENT_ID_FILE': 'client_id.json',
             'GOOGLE_DRIVE_SOURCE_FOLDER_ID': 'source123',
             'GOOGLE_DRIVE_DESTINATION_FOLDER_ID': 'dest456'
-        }.get(key)
+        }
+        mock_env.side_effect = env_vars.get
 
         mock_creds = MagicMock()
         mock_auth.return_value = mock_creds
@@ -236,6 +242,7 @@ class TestMainIntegration:
     @patch('gcp.copy_folder.compare_csv_files')
     @patch('builtins.open', new_callable=mock_open)
     @patch('os.environ.get')
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,unused-argument
     def test_main_complete_workflow(
         self,
         mock_env,
@@ -248,11 +255,12 @@ class TestMainIntegration:
         mock_auth
     ):
         """Test that main executes all steps in correct order"""
-        mock_env.side_effect = lambda key: {
+        env_vars = {
             'GOOGLE_DRIVE_CLIENT_ID_FILE': 'creds.json',
             'GOOGLE_DRIVE_SOURCE_FOLDER_ID': 'src',
             'GOOGLE_DRIVE_DESTINATION_FOLDER_ID': 'dst'
-        }.get(key)
+        }
+        mock_env.side_effect = env_vars.get
 
         mock_auth.return_value = MagicMock()
         mock_service = MagicMock()
@@ -281,6 +289,7 @@ class TestMainIntegration:
     @patch('gcp.copy_folder.compare_csv_files')
     @patch('builtins.open', new_callable=mock_open)
     @patch('os.environ.get')
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,unused-argument
     def test_main_assessment_file_writes(
         self,
         mock_env,
@@ -293,11 +302,12 @@ class TestMainIntegration:
         mock_auth
     ):
         """Test that assessment CSV files are written correctly"""
-        mock_env.side_effect = lambda key: {
+        env_vars = {
             'GOOGLE_DRIVE_CLIENT_ID_FILE': 'test.json',
             'GOOGLE_DRIVE_SOURCE_FOLDER_ID': 'abc',
             'GOOGLE_DRIVE_DESTINATION_FOLDER_ID': 'xyz'
-        }.get(key)
+        }
+        mock_env.side_effect = env_vars.get
 
         mock_auth.return_value = MagicMock()
         mock_service = MagicMock()
