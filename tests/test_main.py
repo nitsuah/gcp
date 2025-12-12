@@ -19,6 +19,7 @@ class TestMainFunction:
     @patch('gcp.copy_folder.compare_csv_files')
     @patch('builtins.open', new_callable=mock_open)
     @patch('os.environ.get')
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def test_main_successful_execution(
         self,
         mock_env,
@@ -32,11 +33,12 @@ class TestMainFunction:
     ):
         """Test main function with successful execution"""
         # Setup environment variables
-        mock_env.side_effect = lambda key: {
+        env_vars = {
             'GOOGLE_DRIVE_CLIENT_ID_FILE': 'client_id.json',
             'GOOGLE_DRIVE_SOURCE_FOLDER_ID': 'source123',
             'GOOGLE_DRIVE_DESTINATION_FOLDER_ID': 'dest456'
-        }.get(key)
+        }
+        mock_env.side_effect = env_vars.get
 
         # Setup mocks
         mock_creds = MagicMock()

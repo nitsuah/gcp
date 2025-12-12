@@ -1,6 +1,6 @@
 """Extended tests for Google Drive copy_folder functionality - Phase 2."""
 # pylint: disable=redefined-outer-name,import-outside-toplevel
-from unittest.mock import Mock, MagicMock, patch, mock_open, call
+from unittest.mock import Mock, MagicMock
 import csv
 import tempfile
 import pytest
@@ -208,7 +208,7 @@ class TestHandleCopyError:
         """Test when parent folder lookup fails."""
         http_error = HttpError(resp=Mock(status=404), content=b'Not Found')
         http_error.__dict__['fileId'] = 'file123'
-        
+
         # Simulate parent lookup failure
         parent_error = HttpError(resp=Mock(status=403), content=b'Forbidden')
         mock_service.files().get().execute.side_effect = parent_error
@@ -244,7 +244,7 @@ class TestAddChildFolders:
             },
             # For Documents folder - count_child_objects queries once for all items
             {'files': [{'id': 'file1', 'name': 'doc.txt', 'mimeType': 'text/plain'}]},
-            # For Pictures folder - count_child_objects queries once for all items  
+            # For Pictures folder - count_child_objects queries once for all items
             {'files': [{'id': 'file2', 'name': 'pic.jpg', 'mimeType': 'image/jpeg'}]},
         ]
 
@@ -253,7 +253,7 @@ class TestAddChildFolders:
             writer.writerow(['Folder Name', 'Number of Files', 'Number of Folders'])
             add_child_folders('parent_id', writer, mock_service)
             f.flush()
-            
+
             # Read back and verify
             with open(f.name, 'r', encoding='utf-8') as rf:
                 reader = csv.reader(rf)
@@ -266,6 +266,7 @@ class TestAddChildFolders:
 
 
 class TestCompareCSVFiles:
+    """Tests for comparing CSV files."""
 
     def test_compare_csv_files_equal(self, tmp_path):
         """Test comparing identical CSV files."""
@@ -273,7 +274,7 @@ class TestCompareCSVFiles:
         file2 = tmp_path / "test2.csv"
 
         data = [['Name', 'Files', 'Folders'], ['Folder1', 10, 5]]
-        
+
         for f in [file1, file2]:
             with open(f, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
