@@ -4,7 +4,7 @@
 
 | Metric            | Value | Notes                                                    |
 | ----------------- | ----- | -------------------------------------------------------- |
-| Code Coverage     | ~10%  | estimated (manual analysis). Only auth & counting (3/9 funcs) tested. Main logic untested. |
+| Code Coverage     | 10%  | estimated (manual analysis). Only auth & counting (3/9 funcs) tested. Main logic untested. |
 | Lines of Code     | ~450  | Single Python file (copy_folder.py)                      |
 | Python Files      | 1     | Main script file                                         |
 | Test Files        | 1     | tests/test_copy_folder.py                                |
