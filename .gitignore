@@ -2,3 +2,14 @@
 *.env.local
 *.log
 examples/
+
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+agent/
+
+
+## EGG INFO
+*.egg-info/
+gcp_drive_tools.egg-info/
