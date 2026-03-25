@@ -11,11 +11,14 @@ These tests confirm that the module can be imported successfully regardless of
 whether 'outputs/' is present in the current directory, and that main() still
 creates the log file under outputs/ when it actually runs.
 """
+# pylint: disable=redefined-outer-name,import-outside-toplevel
 import os
 import subprocess
 import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
+import gcp.copy_folder as cf
 
 
 # Project root (two levels up from this test file) used as PYTHONPATH in
@@ -84,9 +87,6 @@ class TestMainCreatesOutputsDirectory:
 
     def test_main_creates_outputs_dir(self, tmp_path, monkeypatch):
         """main() must create outputs/ if it does not already exist."""
-        from unittest.mock import MagicMock, patch
-
-        import gcp.copy_folder as cf
         monkeypatch.setattr(cf, "OUTPUTS_DIRECTORY", str(tmp_path / "outputs") + "/")
 
         env_vars = {
