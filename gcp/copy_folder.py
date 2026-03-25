@@ -28,14 +28,17 @@ MIME_FOLDER = 'application/vnd.google-apps.folder'
 # Directories and filenames
 OUTPUTS_DIRECTORY = './outputs/'
 
-# Get the current timestamp
-TIMESTAMP = datetime.datetime.now().strftime('%Y%m%d%H%M')
+# Log format used when initializing the file handler in main()
+LOG_FILE_FORMAT = '%(asctime)s %(levelname)s %(message)s %(filename)s %(funcName)s %(lineno)d'
 
-# Create a logger for better error tracking
-LOG_FILENAME = f'gcp-{TIMESTAMP}.log'
-LOG_FILE_PATH = os.path.join(OUTPUTS_DIRECTORY, LOG_FILENAME)
-LOG_FILE_FORMAT='%(asctime)s %(levelname)s %(message)s %(filename)s %(funcName)s %(lineno)d'
-logging.basicConfig(filename=LOG_FILE_PATH, level=logging.INFO, format=LOG_FILE_FORMAT)
+# RCA: logging.basicConfig(filename=...) was previously called at module level, which
+# attempted to open ./outputs/<log>.log immediately on import.  When the outputs/
+# directory did not exist (e.g. in a fresh CI checkout or test run from a different
+# working directory) Python raised FileNotFoundError and the entire module failed to
+# import, breaking every test that tried to 'from gcp.copy_folder import ...'.
+# Fix: use a stream-based logger at module scope; configure the file handler inside
+# main() only after ensuring the outputs directory exists.
+logging.basicConfig(level=logging.INFO, format=LOG_FILE_FORMAT)
 
 # Module-level variables will be initialized in main()
 # This prevents execution on import
@@ -273,6 +276,16 @@ def compare_csv_files(file1, file2):
 def main():
     """Main entry point for CLI."""
     global service  # pylint: disable=global-statement
+
+    # Ensure the outputs directory exists and attach the file log handler.
+    # This is done here (not at module level) to avoid FileNotFoundError on import
+    # when the directory does not yet exist (the original RCA for CI failures).
+    os.makedirs(OUTPUTS_DIRECTORY, exist_ok=True)
+    timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M')
+    log_file_path = os.path.join(OUTPUTS_DIRECTORY, f'gcp-{timestamp}.log')
+    file_handler = logging.FileHandler(log_file_path)
+    file_handler.setFormatter(logging.Formatter(LOG_FILE_FORMAT))
+    logging.getLogger().addHandler(file_handler)
 
     print("Google Drive Report & Copy Tool")
     print("Running copy_folder script...")
