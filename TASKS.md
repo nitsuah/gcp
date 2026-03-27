@@ -1,43 +1,40 @@
 # Tasks
 
+Last Updated: 2026-03-27
+
 ## Done
 
-- [x] Shipped assessment scripts and validated output artifacts (`outputs/assessment-1.csv`, `outputs/assessment-2.csv`, `outputs/assessment-3.csv`).
-- [x] Added core automated tests for copy logic and CLI entry paths.
-- [x] Added CI security workflows (pylint, bandit, codeql, dependency review).
-- [x] Published setup and environment docs in README and `.env.example`.
+- [x] Ship the assessment scripts and validate output artifacts.
+- [x] Add automated tests for copy logic and CLI entry paths.
+- [x] Add CI security workflows.
+- [x] Publish setup and environment docs in README and `.env.example`.
 
 ## In Progress
 
-- [ ] P0 | Bug | Confidence: High | Fix Docker build failure in `Dockerfile`.
-  - Problem: `docker build` fails because `COPY copy_folder.py .` references a file that does not exist at repo root.
-  - Impact: Containerized usage path is broken and cannot be deployed reliably.
-  - Acceptance Criteria: Docker image builds successfully from repo root and `drive-copy` runs without file-not-found errors.
-  - Dependencies: None.
+- [ ] Fix the Docker build failure in `Dockerfile`.
+  - Priority: P0
+  - Problem: `docker build` still references `copy_folder.py` at the wrong path.
+  - Acceptance Criteria: the image builds from repo root and runs the packaged entrypoint cleanly.
 
 ## Todo
 
-- [ ] P1 | Reliability | Confidence: High | Add Docker smoke test to CI.
-  - Problem: Current CI validates lint/security but not container runtime behavior.
-  - Impact: Build/runtime container regressions can ship undetected.
-  - Acceptance Criteria: A workflow builds the Docker image and runs a basic command successfully.
-  - Dependencies: Dockerfile fix.
+- [ ] Add a Docker smoke test to CI.
+  - Priority: P1
+  - Problem: CI still misses container runtime regressions.
+  - Acceptance Criteria: the workflow builds the image and runs a basic command successfully.
 
-- [ ] P1 | Docs | Confidence: High | Align README command examples with actual packaged CLI.
-  - Problem: Some historical command examples and module paths are inconsistent with current structure.
-  - Impact: Slower onboarding and support overhead.
-  - Acceptance Criteria: README shows one canonical run path and one alternate path that both execute successfully.
-  - Dependencies: None.
+- [ ] Align README examples with the shipped CLI.
+  - Priority: P1
+  - Problem: command examples and module paths have drifted from the packaged entrypoint.
+  - Acceptance Criteria: README shows one canonical path and one valid alternate path.
 
-- [ ] P2 | Feature | Confidence: Medium | Add `--dry-run` option for copy workflow.
-  - Problem: Users cannot validate intended copy operations safely before writing changes.
-  - Impact: Increased operational risk on production folders.
-  - Acceptance Criteria: CLI supports dry-run mode with summary output and no writes.
-  - Dependencies: Stable command argument parser.
+- [ ] Add a `--dry-run` option for copy workflows.
+  - Priority: P2
+  - Problem: users cannot preview planned copy operations safely.
+  - Acceptance Criteria: the CLI supports dry-run mode with summary output and no writes.
 
-- [ ] P2 | Feature | Confidence: Medium | Add progress telemetry for long-running copy operations.
-  - Problem: Large copy jobs provide limited visibility.
-  - Impact: Operators cannot estimate completion or detect stalls quickly.
-  - Acceptance Criteria: Log periodic progress updates and final duration summary.
-  - Dependencies: None.
+- [ ] Add progress telemetry for long-running copy operations.
+  - Priority: P2
+  - Problem: large copy jobs still provide poor visibility.
+  - Acceptance Criteria: the tool logs periodic progress updates and a final duration summary.
 

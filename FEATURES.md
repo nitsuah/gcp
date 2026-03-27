@@ -1,5 +1,7 @@
 # GCP Google Drive API Script Features
 
+Status guide: core assessment and copy features below are `[shipped]`. Planned enhancements belong in ROADMAP.md and TASKS.md.
+
 ## Core Capabilities
 
 ### 🔐 Authentication & Authorization
@@ -11,10 +13,10 @@
 
 ### 📊 Reporting & Analysis
 
-- **Assessment 1 - Root Count**: Generates CSV report showing total files and folders in source folder root
-- **Assessment 2 - Recursive Count**: Creates detailed CSV report with recursive child object counts for all top-level folders
-- **Assessment 3 - Copy Validation**: Produces CSV report of destination folder contents after copy operation
-- **CSV Export**: Automated CSV file generation with structured data format
+- `[shipped]` **Assessment 1 - Root Count**: Generates CSV report showing total files and folders in source folder root
+- `[shipped]` **Assessment 2 - Recursive Count**: Creates detailed CSV report with recursive child object counts for all top-level folders
+- `[shipped]` **Assessment 3 - Copy Validation**: Produces CSV report of destination folder contents after copy operation
+- `[shipped]` **CSV Export**: Automated CSV file generation with structured data format
 
 ### 📁 Folder Operations
 
