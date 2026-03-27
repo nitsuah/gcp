@@ -12,7 +12,7 @@
 - [ ] P0 | Bug | Confidence: High | Fix Docker build failure in `Dockerfile`.
   - Problem: `docker build` fails because `COPY copy_folder.py .` references a file that does not exist at repo root.
   - Impact: Containerized usage path is broken and cannot be deployed reliably.
-  - Acceptance Criteria: Docker image builds successfully from repo root and runs the package entrypoint without file-not-found errors.
+  - Acceptance Criteria: Docker image builds successfully from repo root and `drive-copy` runs without file-not-found errors.
   - Dependencies: None.
 
 ## Todo

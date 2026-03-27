@@ -11,7 +11,7 @@
 
 - [ ] Fix Docker image build path and runtime command so container execution matches repository layout
 - [ ] Add Docker smoke validation to CI to prevent container regressions
-- [ ] Normalize README examples to match the shipped `drive-report` entrypoint
+- [ ] Normalize README examples to match the shipped `drive-copy` entrypoint
 
 ## 2026 Q3 (Planned)
 
