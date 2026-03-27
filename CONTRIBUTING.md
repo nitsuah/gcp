@@ -151,8 +151,8 @@ Use clear, descriptive commit messages:
 git clone https://github.com/your-username/gcp.git
 cd gcp
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies for development/testing
+pip install -r requirements-dev.txt
 
 # Set environment variables
 export GOOGLE_DRIVE_CLIENT_ID_FILE='/path/to/client_id.json'
