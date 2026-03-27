@@ -4,7 +4,7 @@
 [![Linting](https://github.com/nitsuah/gcp/actions/workflows/pylint.yml/badge.svg)](https://github.com/nitsuah/gcp/actions)
 <!-- CI is TBD [![CI](https://github.com/nitsuah/gcp/actions/workflows/pylint.yml/badge.svg)](https://github.com/nitsuah/gcp/actions) -->
 
-**TL;DR-** - A simple script that uses the Google Drive API to generate reports of files and folders and copy all contents from one folder to another.
+**TL;DR:** Google Drive assessment and copy tooling packaged as the `drive-copy` CLI.
 
 ## Objectives
 
@@ -35,7 +35,7 @@ cd gcp
 pip install -e ".[dev]"
 
 # Verify installation
-drive-report --help
+drive-copy --help
 ```
 
 ### Required API Scopes
@@ -65,8 +65,10 @@ GOOGLE_DRIVE_DESTINATION_FOLDER_ID=xyz456abc
 ### CLI Command
 
 ```bash
-drive-report
+drive-copy
 ```
+
+`drive-report` appears in older notes, but the packaged console script in `pyproject.toml` is `drive-copy`.
 
 ### Python Module
 

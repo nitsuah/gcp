@@ -1,29 +1,28 @@
-# 🗺️ GCP Google Drive API Script Roadmap
+# GCP Google Drive Tools Roadmap
 
-## 2023Q4: ✅ Initial Development
+Last Updated: 2026-03-27
 
-- [x] Core Google Drive API integration
-- [x] OAuth2 authentication implementation
-- [x] Assessment 1: Root folder file/folder counting
-- [x] Assessment 2: Recursive child object counting
-- [x] Assessment 3: Folder copying with validation
-- [x] Error handling and logging system
-- [x] CSV report generation
-- [x] CI/CD pipeline setup (Pylint, Bandit, CodeQL, Dependency Review)
+## 2026 Q1 (Completed)
 
-## 2025Q4: ✅ Validation & Documentation
+- [x] Deliver the three assessment workflows.
+- [x] Add pytest coverage for copy and CLI paths.
+- [x] Add security and quality workflows.
+- [x] Document OAuth setup and CLI usage.
 
-- [x] Validation system to compare source and destination
-- [x] Comprehensive documentation (README, ABOUT)
-- [x] GitHub Actions workflows
-- [x] Environment variable configuration
+## 2026 Q2 (In Progress)
 
-## 2026: 🔮 Enhancements
+- [ ] Fix the Docker image build and runtime path.
+- [ ] Add Docker smoke validation to CI.
+- [ ] Normalize README examples around the `drive-copy` entrypoint.
 
-- [ ] Web GUI for easier configuration (oauth, folder selection, tracking)
-- [ ] Progress tracking for large folder copies
-- [ ] Parallel processing for faster copying
-- [ ] Support for selective file type copying
-- [ ] Dry-run mode for testing
-- [ ] Enhanced error recovery mechanisms
-- [ ] Unit tests for core functions
+## 2026 Q3 (Planned)
+
+- [ ] Add dry-run mode for copy operations.
+- [ ] Add progress telemetry for large folder copies.
+- [ ] Add selective copy filters by file type.
+
+## 2026 Q4 (Exploratory)
+
+- [ ] Evaluate a lightweight web UI for credential and folder configuration.
+- [ ] Evaluate safe parallel copy with bounded retries and rate-limit awareness.
+
