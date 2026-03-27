@@ -2,77 +2,42 @@
 
 ## Done
 
+- [x] Shipped assessment scripts and validated output artifacts (`outputs/assessment-1.csv`, `outputs/assessment-2.csv`, `outputs/assessment-3.csv`).
+- [x] Added core automated tests for copy logic and CLI entry paths.
+- [x] Added CI security workflows (pylint, bandit, codeql, dependency review).
+- [x] Published setup and environment docs in README and `.env.example`.
+
 ## In Progress
+
+- [ ] P0 | Bug | Confidence: High | Fix Docker build failure in `Dockerfile`.
+  - Problem: `docker build` fails because `COPY copy_folder.py .` references a file that does not exist at repo root.
+  - Impact: Containerized usage path is broken and cannot be deployed reliably.
+  - Acceptance Criteria: Docker image builds successfully from repo root and runs the package entrypoint without file-not-found errors.
+  - Dependencies: None.
 
 ## Todo
 
-### High Priority - Core Functionality & Documentation
+- [ ] P1 | Reliability | Confidence: High | Add Docker smoke test to CI.
+  - Problem: Current CI validates lint/security but not container runtime behavior.
+  - Impact: Build/runtime container regressions can ship undetected.
+  - Acceptance Criteria: A workflow builds the Docker image and runs a basic command successfully.
+  - Dependencies: Dockerfile fix.
 
-#### A. README.md Enhancement
-- [ ] Add TL;DR section at the top
-- [ ] Document prerequisites: Python 3.10+, GCP credentials setup
-- [ ] Add required scopes for Google Drive API
-- [ ] Include `pip install -e .` installation instructions
-- [ ] Add example run command:
-  ```bash
-  GOOGLE_APPLICATION_CREDENTIALS=~/.gcp/creds.json python -m gcp.drive_report --folder-id abc123 --output report.json
-  ```
-- [ ] Document CSV/JSON output schema with examples
-- [ ] Link to `.env.example` file
+- [ ] P1 | Docs | Confidence: High | Align README command examples with actual packaged CLI.
+  - Problem: Some historical command examples and module paths are inconsistent with current structure.
+  - Impact: Slower onboarding and support overhead.
+  - Acceptance Criteria: README shows one canonical run path and one alternate path that both execute successfully.
+  - Dependencies: None.
 
-#### B. Packaging & CLI Entry Points
-- [ ] Create/update `pyproject.toml` with PEP 621 format
-- [ ] Add console_scripts entry points:
-  - `drive-report = gcp.scripts.drive_report:main`
-- [ ] Ensure all main modules expose `main()` functions
-- [ ] Test `pip install -e .` installation works
-- [ ] Verify CLI commands are accessible after install
+- [ ] P2 | Feature | Confidence: Medium | Add `--dry-run` option for copy workflow.
+  - Problem: Users cannot validate intended copy operations safely before writing changes.
+  - Impact: Increased operational risk on production folders.
+  - Acceptance Criteria: CLI supports dry-run mode with summary output and no writes.
+  - Dependencies: Stable command argument parser.
 
-#### C. Tests & Mocking
-- [ ] Create `tests/test_drive_report.py` with pytest
-- [ ] Add pytest-mock dependency
-- [ ] Mock Google Drive API client with sample dataset
-- [ ] Assert JSON output structure correctness
-- [ ] Add `pytest.ini` or `tox.ini` configuration
-- [ ] Ensure at least one mocked integration test passes
+- [ ] P2 | Feature | Confidence: Medium | Add progress telemetry for long-running copy operations.
+  - Problem: Large copy jobs provide limited visibility.
+  - Impact: Operators cannot estimate completion or detect stalls quickly.
+  - Acceptance Criteria: Log periodic progress updates and final duration summary.
+  - Dependencies: None.
 
-#### D. CI/CD & Security
-- [ ] Create `.github/workflows/python-ci.yml`
-- [ ] Add workflow steps:
-  - Checkout code
-  - Setup Python 3.10
-  - Install pip-tools
-  - Install requirements
-  - Run `pytest -q`
-  - Run `pylint`
-  - Run `bandit -r app/`
-- [ ] Verify all CI steps pass
-
-#### E. Examples & Environment Configuration
-- [ ] Create `.env.example` with required keys:
-  - `GOOGLE_APPLICATION_CREDENTIALS=/path/to/creds.json`
-  - `DRIVE_API_SCOPE=https://www.googleapis.com/auth/drive.readonly`
-- [ ] Add `examples/report-sample.json` with sample output
-- [ ] Document security warning about not committing credentials
-
-### Medium Priority - Enhancements
-
-- [ ] Add progress tracking for large folder operations
-- [ ] Implement parallel processing for faster copying
-- [ ] Add dry-run mode for testing without actual copying
-- [ ] Add support for selective file type filtering
-- [ ] Improve error recovery with configurable retry strategies
-
-### Low Priority - Nice to Have
-
-- [ ] Add GUI for starting and monitoring ongoing operations
-
-### Security Notes
-- [ ] Audit repository for committed credentials
-- [ ] Add warning in README about GOOGLE_APPLICATION_CREDENTIALS
-- [ ] Ensure service account keys are in `.gitignore`
-
-## References
-- See `AGENT_INSTRUCTIONS.md` for detailed implementation guide
-- See `CONTRIBUTING.md` for PR checklist and standards
-- See `SECURITY.md` for security requirements

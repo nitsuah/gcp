@@ -1,29 +1,26 @@
-# 🗺️ GCP Google Drive API Script Roadmap
+# GCP Google Drive Tools Roadmap
 
-## 2023Q4: ✅ Initial Development
+## 2026 Q1 (Completed)
 
-- [x] Core Google Drive API integration
-- [x] OAuth2 authentication implementation
-- [x] Assessment 1: Root folder file/folder counting
-- [x] Assessment 2: Recursive child object counting
-- [x] Assessment 3: Folder copying with validation
-- [x] Error handling and logging system
-- [x] CSV report generation
-- [x] CI/CD pipeline setup (Pylint, Bandit, CodeQL, Dependency Review)
+- [x] Delivered three assessment workflows (root counts, recursive counts, and copy validation)
+- [x] Added pytest suite for copy and CLI paths
+- [x] Added security and quality workflows (pylint, bandit, codeql, dependency review)
+- [x] Documented environment-based OAuth setup and CLI usage
 
-## 2025Q4: ✅ Validation & Documentation
+## 2026 Q2 (In Progress)
 
-- [x] Validation system to compare source and destination
-- [x] Comprehensive documentation (README, ABOUT)
-- [x] GitHub Actions workflows
-- [x] Environment variable configuration
+- [ ] Fix Docker image build path and runtime command so container execution matches repository layout
+- [ ] Add Docker smoke validation to CI to prevent container regressions
+- [ ] Normalize README examples to match the shipped `drive-report` entrypoint
 
-## 2026: 🔮 Enhancements
+## 2026 Q3 (Planned)
 
-- [ ] Web GUI for easier configuration (oauth, folder selection, tracking)
-- [ ] Progress tracking for large folder copies
-- [ ] Parallel processing for faster copying
-- [ ] Support for selective file type copying
-- [ ] Dry-run mode for testing
-- [ ] Enhanced error recovery mechanisms
-- [ ] Unit tests for core functions
+- [ ] Add dry-run mode for copy operations
+- [ ] Add progress telemetry for large folder copies
+- [ ] Add selective copy filters by file type
+
+## 2026 Q4 (Exploratory)
+
+- [ ] Evaluate lightweight web UI for credential and folder configuration
+- [ ] Evaluate safe parallel copy strategy with bounded retries and rate-limit awareness
+
