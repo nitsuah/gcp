@@ -325,3 +325,50 @@ class TestMainIntegration:
         assert any('assessment-1.csv' in call for call in calls)
         assert any('assessment-2.csv' in call for call in calls)
         assert any('assessment-3.csv' in call for call in calls)
+
+
+class TestMainDryRun:
+    """Dry-run mode should avoid writes and copy operations."""
+
+    @patch('gcp.copy_folder.authenticate_and_authorize')
+    @patch('gcp.copy_folder.create_drive_service')
+    @patch('gcp.copy_folder.count_child_objects')
+    @patch('gcp.copy_folder.add_child_folders')
+    @patch('gcp.copy_folder.copy_child_objects')
+    @patch('gcp.copy_folder.compare_csv_files')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('os.environ.get')
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,unused-argument
+    def test_main_dry_run_skips_copy_and_writes(
+        self,
+        mock_env,
+        mock_file_open,
+        mock_compare,
+        mock_copy,
+        mock_add_child,
+        mock_count,
+        mock_create_service,
+        mock_auth,
+    ):
+        env_vars = {
+            'GOOGLE_DRIVE_CLIENT_ID_FILE': 'client_id.json',
+            'GOOGLE_DRIVE_SOURCE_FOLDER_ID': 'source123',
+            'GOOGLE_DRIVE_DESTINATION_FOLDER_ID': 'dest456',
+        }
+        mock_env.side_effect = env_vars.get
+
+        mock_auth.return_value = MagicMock()
+        mock_service = MagicMock()
+        mock_create_service.return_value = mock_service
+        mock_service.files().get().execute.side_effect = [
+            {'name': 'Source Folder'},
+            {'name': 'Destination Folder'},
+        ]
+        mock_count.return_value = (10, 5)
+
+        main(['--dry-run'])
+
+        mock_copy.assert_not_called()
+        mock_add_child.assert_not_called()
+        mock_compare.assert_not_called()
+        mock_file_open.assert_not_called()

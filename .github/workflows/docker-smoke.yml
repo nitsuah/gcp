@@ -1,0 +1,21 @@
+name: Docker Smoke
+
+on:
+  push:
+    branches: [ main, develop, docs ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Build image
+        run: docker build -t gcp-docker-smoke .
+
+      - name: Verify packaged CLI entrypoint
+        run: docker run --rm gcp-docker-smoke drive-copy --help
