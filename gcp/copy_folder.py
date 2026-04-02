@@ -1,6 +1,7 @@
 '''
 A script using the Google Drive API to create reports and copy contents between folders.
 '''
+import argparse
 import os
 import csv
 import logging
@@ -273,19 +274,43 @@ def compare_csv_files(file1, file2):
         logging.error("VALIDATION FAILED - Source & Destination folder counts do not match.")
         print("ERROR: VALIDATION FAILED!")
 
-def main():
+def main(argv=None):
     """Main entry point for CLI."""
     global service  # pylint: disable=global-statement
 
-    # Ensure the outputs directory exists and attach the file log handler.
-    # This is done here (not at module level) to avoid FileNotFoundError on import
-    # when the directory does not yet exist (the original RCA for CI failures).
-    os.makedirs(OUTPUTS_DIRECTORY, exist_ok=True)
-    timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M')
-    log_file_path = os.path.join(OUTPUTS_DIRECTORY, f'gcp-{timestamp}.log')
-    file_handler = logging.FileHandler(log_file_path)
-    file_handler.setFormatter(logging.Formatter(LOG_FILE_FORMAT))
-    logging.getLogger().addHandler(file_handler)
+    parser = argparse.ArgumentParser(
+        prog='drive-copy',
+        description='Google Drive report and copy utility',
+    )
+    parser.add_argument(
+        '--help-env',
+        action='store_true',
+        help='Show required environment variables and exit',
+    )
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Preview source counts and planned copy target without writing outputs or copying files',
+    )
+    args, _ = parser.parse_known_args(argv)
+
+    if args.help_env:
+        print('Required environment variables:')
+        print(f'- {CLIENT_ID_ENV_VAR}')
+        print(f'- {SOURCE_FOLDER_ID_ENV_VAR}')
+        print(f'- {DESTINATION_FOLDER_ID_ENV_VAR}')
+        return
+
+    if not args.dry_run:
+        # Ensure the outputs directory exists and attach the file log handler.
+        # This is done here (not at module level) to avoid FileNotFoundError on import
+        # when the directory does not yet exist (the original RCA for CI failures).
+        os.makedirs(OUTPUTS_DIRECTORY, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M')
+        log_file_path = os.path.join(OUTPUTS_DIRECTORY, f'gcp-{timestamp}.log')
+        file_handler = logging.FileHandler(log_file_path)
+        file_handler.setFormatter(logging.Formatter(LOG_FILE_FORMAT))
+        logging.getLogger().addHandler(file_handler)
 
     print("Google Drive Report & Copy Tool")
     print("Running copy_folder script...")
@@ -319,12 +344,28 @@ def main():
     destination_folder_name = service.files().get(fileId=destination_folder_id, fields='name').execute()
     # pylint: enable=no-member
 
+    total_num_files, total_num_folders = count_child_objects(source_folder_id, service)
+
+    if args.dry_run:
+        print('DRY RUN: no files will be copied and no output artifacts will be written.')
+        print(
+            f"Source '{source_folder_name['name']}' -> Destination '{destination_folder_name['name']}'"
+        )
+        print(f'Planned object scan: files={total_num_files}, folders={total_num_folders}')
+        logging.info(
+            "DRY RUN: source=%s destination=%s files=%d folders=%d",
+            source_folder_name['name'],
+            destination_folder_name['name'],
+            total_num_files,
+            total_num_folders,
+        )
+        return
+
     logging.info("STARTING ASSESSMENTS...")
     # ASSESSEMENT 1 - Write the results to a CSV file
     csv_file = './outputs/assessment-1.csv'
     with open(csv_file, 'w', newline='', encoding='utf-8') as output_file:
         # Get the name of the source folder
-        total_num_files, total_num_folders = count_child_objects(source_folder_id, service)
         writer = csv.writer(output_file)
         writer.writerow(['Folder Name', 'Number of Files', 'Number of Folders'])
         writer.writerow([source_folder_name['name'], total_num_files, total_num_folders])

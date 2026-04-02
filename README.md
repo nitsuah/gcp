@@ -65,7 +65,17 @@ GOOGLE_DRIVE_DESTINATION_FOLDER_ID=xyz456abc
 ### CLI Command
 
 ```bash
+# Canonical packaged entrypoint
 drive-copy
+
+# Optional: print required environment variable names
+drive-copy --help-env
+
+# Optional: preview copy scope without writing outputs or copying files
+drive-copy --dry-run
+
+# Alternate valid path (module execution)
+python -m gcp.copy_folder
 ```
 
 `drive-report` appears in older notes, but the packaged console script in `pyproject.toml` is `drive-copy`.
