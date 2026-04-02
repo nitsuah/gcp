@@ -350,6 +350,7 @@ class TestMainDryRun:
         mock_create_service,
         mock_auth,
     ):
+        """Verify that --dry-run exits before performing copies or writing output files."""
         env_vars = {
             'GOOGLE_DRIVE_CLIENT_ID_FILE': 'client_id.json',
             'GOOGLE_DRIVE_SOURCE_FOLDER_ID': 'source123',
