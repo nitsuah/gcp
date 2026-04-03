@@ -1,6 +1,6 @@
 # GCP Google Drive Tools Roadmap
 
-Last Updated: 2026-03-27
+Last Updated: 2026-04-03 (pmo/q2-2026-planning)
 
 ## 2026 Q1 (Completed)
 
@@ -11,9 +11,10 @@ Last Updated: 2026-03-27
 
 ## 2026 Q2 (In Progress)
 
-- [ ] Fix the Docker image build and runtime path.
-- [ ] Add Docker smoke validation to CI.
-- [ ] Normalize README examples around the `drive-copy` entrypoint.
+- [x] Fix the Docker image build and runtime path.
+- [x] Add Docker smoke validation to CI.
+- [x] Normalize README examples around the `drive-copy` entrypoint.
+- [x] Add `--dry-run` mode for copy operations.
 
 ## 2026 Q3 (Planned)
 
