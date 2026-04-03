@@ -6,6 +6,7 @@ import os
 import csv
 import logging
 import datetime
+import time
 import pandas as pd
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -25,6 +26,7 @@ DESTINATION_FOLDER_ID_ENV_VAR = 'GOOGLE_DRIVE_DESTINATION_FOLDER_ID'
 # Script Constants
 MISSING_ENVAR_TXT = 'Missing environment variable for'
 MIME_FOLDER = 'application/vnd.google-apps.folder'
+DEFAULT_PROGRESS_LOG_EVERY = 25
 
 # Directories and filenames
 OUTPUTS_DIRECTORY = './outputs/'
@@ -142,7 +144,51 @@ def count_child_objects(folder_id, drive_service=None):
     return num_files, num_folders
 
 # Define a function to copy child objects recursively
-def copy_child_objects(src_folder_id, dest_folder_id, drive_service=None, max_retries=1):
+def _create_progress_tracker(progress_log_every):
+    return {
+        'start_time': time.monotonic(),
+        'copied_files': 0,
+        'created_folders': 0,
+        'failed_files': 0,
+        'processed_since_log': 0,
+        'progress_log_every': max(1, int(progress_log_every)),
+    }
+
+
+def _log_progress_if_needed(progress_tracker, force=False):
+    if not force and progress_tracker['processed_since_log'] < progress_tracker['progress_log_every']:
+        return
+
+    elapsed = time.monotonic() - progress_tracker['start_time']
+    logging.info(
+        'COPY PROGRESS: files=%d folders=%d failed=%d elapsed=%.2fs',
+        progress_tracker['copied_files'],
+        progress_tracker['created_folders'],
+        progress_tracker['failed_files'],
+        elapsed,
+    )
+    progress_tracker['processed_since_log'] = 0
+
+
+def _log_progress_summary(progress_tracker):
+    elapsed = time.monotonic() - progress_tracker['start_time']
+    logging.info(
+        'COPY PROGRESS SUMMARY: files=%d folders=%d failed=%d total_elapsed=%.2fs',
+        progress_tracker['copied_files'],
+        progress_tracker['created_folders'],
+        progress_tracker['failed_files'],
+        elapsed,
+    )
+
+
+def copy_child_objects(
+    src_folder_id,
+    dest_folder_id,
+    drive_service=None,
+    max_retries=1,
+    progress_tracker=None,
+    progress_log_every=DEFAULT_PROGRESS_LOG_EVERY,
+):
     """
     Copies all child objects (files and folders) from source folder to a destination folder.
     Includes a static retry mechanism for file copy failures.
@@ -154,6 +200,8 @@ def copy_child_objects(src_folder_id, dest_folder_id, drive_service=None, max_re
         max_retries=1 (int): The maximum number of times to retry copying a file before giving up.
     """
     svc = drive_service or service
+    root_call = progress_tracker is None
+    tracker = progress_tracker or _create_progress_tracker(progress_log_every)
     # List files in the source folder
     query = f"'{src_folder_id}' in parents"
     results = svc.files().list(q=query).execute()
@@ -168,6 +216,9 @@ def copy_child_objects(src_folder_id, dest_folder_id, drive_service=None, max_re
                 try:
                     # Attempt to copy the file
                     svc.files().copy(fileId=file['id'], body=file_metadata).execute()
+                    tracker['copied_files'] += 1
+                    tracker['processed_since_log'] += 1
+                    _log_progress_if_needed(tracker)
                     # If the copy is successful, break out of the retry loop
                     break
                 except HttpError as error_msg:
@@ -179,6 +230,9 @@ def copy_child_objects(src_folder_id, dest_folder_id, drive_service=None, max_re
                         # If all retries fail, log the error and move on to the next file
                         logging.error("Error copying file %s after %d retries: %s",
                                       file['name'], max_retries, error_msg)
+                        tracker['failed_files'] += 1
+                        tracker['processed_since_log'] += 1
+                        _log_progress_if_needed(tracker)
                         break
 
     except HttpError as error_msg:
@@ -199,8 +253,22 @@ def copy_child_objects(src_folder_id, dest_folder_id, drive_service=None, max_re
             'mimeType': 'application/vnd.google-apps.folder'
         }
         new_folder = svc.files().create(body=new_folder_metadata, fields='id').execute()
+        tracker['created_folders'] += 1
+        tracker['processed_since_log'] += 1
+        _log_progress_if_needed(tracker)
         # Recursively copy the child objects into the new folder
-        copy_child_objects(folder['id'], new_folder['id'], svc)
+        copy_child_objects(
+            folder['id'],
+            new_folder['id'],
+            svc,
+            max_retries=max_retries,
+            progress_tracker=tracker,
+            progress_log_every=progress_log_every,
+        )
+
+    if root_call:
+        _log_progress_if_needed(tracker, force=True)
+        _log_progress_summary(tracker)
 
 # Define a function to handle copy errors
 def handle_copy_error(file_or_folder_name, error, drive_service=None):

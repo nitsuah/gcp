@@ -1,6 +1,6 @@
 """Extended tests for Google Drive copy_folder functionality - Phase 2."""
 # pylint: disable=redefined-outer-name,import-outside-toplevel
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock, MagicMock, patch
 import csv
 import tempfile
 import pytest
@@ -178,6 +178,34 @@ class TestCopyChildObjects:
         copy_child_objects('src', 'dest', mock_service, max_retries=2)
 
         assert mock_service.files().copy.call_count >= 2
+
+    def test_copy_child_objects_logs_progress_and_summary(self, mock_service):
+        """Test progress telemetry and final duration summary logging."""
+        mock_service.files().list().execute.side_effect = [
+            {
+                'files': [
+                    {'id': 'file1', 'name': 'doc1.txt'},
+                    {'id': 'file2', 'name': 'doc2.txt'},
+                ]
+            },
+            {'files': []},
+        ]
+        mock_service.files().copy().execute.return_value = {'id': 'new_file'}
+
+        with patch('gcp.copy_folder.logging.info') as mock_info:
+            copy_child_objects('src', 'dest', mock_service, progress_log_every=1)
+
+        progress_calls = [
+            call for call in mock_info.call_args_list
+            if call.args and isinstance(call.args[0], str) and call.args[0].startswith('COPY PROGRESS:')
+        ]
+        summary_calls = [
+            call for call in mock_info.call_args_list
+            if call.args and isinstance(call.args[0], str) and call.args[0].startswith('COPY PROGRESS SUMMARY:')
+        ]
+
+        assert len(progress_calls) >= 1
+        assert len(summary_calls) == 1
 
 
 class TestHandleCopyError:
