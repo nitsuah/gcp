@@ -44,5 +44,8 @@ addopts = "-v --tb=short"
 [tool.pylint.messages_control]
 disable = ["C0111", "C0103"]
 
+[tool.isort]
+profile = "black"
+
 [tool.bandit]
 exclude_dirs = ["tests", "testing"]

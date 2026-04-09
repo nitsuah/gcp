@@ -1,38 +1,42 @@
-'''
+"""
 A script using the Google Drive API to create reports and copy contents between folders.
-'''
+"""
+
 import argparse
-import os
 import csv
-import logging
 import datetime
+import logging
+import os
 import time
+
 import pandas as pd
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError # pylint: disable=ungrouped-imports
+from googleapiclient.errors import HttpError  # pylint: disable=ungrouped-imports
 
 # Define API scopes
 SCOPES = [
-    'https://www.googleapis.com/auth/drive',
-    'https://www.googleapis.com/auth/drive.metadata.readonly'
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
 ]
 
 # Environment variables
-CLIENT_ID_ENV_VAR = 'GOOGLE_DRIVE_CLIENT_ID_FILE'
-SOURCE_FOLDER_ID_ENV_VAR = 'GOOGLE_DRIVE_SOURCE_FOLDER_ID'
-DESTINATION_FOLDER_ID_ENV_VAR = 'GOOGLE_DRIVE_DESTINATION_FOLDER_ID'
+CLIENT_ID_ENV_VAR = "GOOGLE_DRIVE_CLIENT_ID_FILE"
+SOURCE_FOLDER_ID_ENV_VAR = "GOOGLE_DRIVE_SOURCE_FOLDER_ID"
+DESTINATION_FOLDER_ID_ENV_VAR = "GOOGLE_DRIVE_DESTINATION_FOLDER_ID"
 
 # Script Constants
-MISSING_ENVAR_TXT = 'Missing environment variable for'
-MIME_FOLDER = 'application/vnd.google-apps.folder'
+MISSING_ENVAR_TXT = "Missing environment variable for"
+MIME_FOLDER = "application/vnd.google-apps.folder"
 DEFAULT_PROGRESS_LOG_EVERY = 25
 
 # Directories and filenames
-OUTPUTS_DIRECTORY = './outputs/'
+OUTPUTS_DIRECTORY = "./outputs/"
 
 # Log format used when initializing the file handler in main()
-LOG_FILE_FORMAT = '%(asctime)s %(levelname)s %(message)s %(filename)s %(funcName)s %(lineno)d'
+LOG_FILE_FORMAT = (
+    "%(asctime)s %(levelname)s %(message)s %(filename)s %(funcName)s %(lineno)d"
+)
 
 # RCA: logging.basicConfig(filename=...) was previously called at module level, which
 # attempted to open ./outputs/<log>.log immediately on import.  When the outputs/
@@ -46,6 +50,7 @@ logging.basicConfig(level=logging.INFO, format=LOG_FILE_FORMAT)
 # Module-level variables will be initialized in main()
 # This prevents execution on import
 service = None  # pylint: disable=invalid-name
+
 
 # Create a flow to handle the OAuth2 authentication
 def authenticate_and_authorize(client_id_file, api_scopes):
@@ -66,6 +71,7 @@ def authenticate_and_authorize(client_id_file, api_scopes):
         return auth_credentials
     return None
 
+
 def create_drive_service(valid_credentials):
     """
     Creates a Google Drive API service object.
@@ -76,11 +82,13 @@ def create_drive_service(valid_credentials):
     Returns:
         service (googleapiclient.discovery.Resource): The Drive API service object.
     """
-    return build('drive', 'v3', credentials=valid_credentials)
+    return build("drive", "v3", credentials=valid_credentials)
+
 
 # MAGIC Constants - to improve readability & linting
 # Disable pylint for no-member at the function level
 # pylint: disable=no-member
+
 
 # Define a function to count files and folders
 def count_files_and_folders(folder_id, drive_service=None):
@@ -97,19 +105,24 @@ def count_files_and_folders(folder_id, drive_service=None):
     """
     svc = drive_service or service
     # Count Files
-    query = (f"'{folder_id}' in parents and mimeType != '{MIME_FOLDER}' "
-             f"and trashed = false")
+    query = (
+        f"'{folder_id}' in parents and mimeType != '{MIME_FOLDER}' "
+        f"and trashed = false"
+    )
     results = svc.files().list(q=query).execute()
-    files = results.get('files', [])
+    files = results.get("files", [])
     num_files = len(files)
     # Count Folders
-    query = (f"'{folder_id}' in parents and mimeType = '{MIME_FOLDER}' "
-             f"and trashed = false")
+    query = (
+        f"'{folder_id}' in parents and mimeType = '{MIME_FOLDER}' "
+        f"and trashed = false"
+    )
     results = svc.files().list(q=query).execute()
-    folders = results.get('files', [])
+    folders = results.get("files", [])
     num_folders = len(folders)
 
     return num_files, num_folders
+
 
 # Define a function to count child objects recursively
 def count_child_objects(folder_id, drive_service=None):
@@ -127,14 +140,14 @@ def count_child_objects(folder_id, drive_service=None):
     svc = drive_service or service
     query = f"'{folder_id}' in parents and trashed = false"
     results = svc.files().list(q=query).execute()
-    files_and_folders = results.get('files', [])
+    files_and_folders = results.get("files", [])
     num_files = 0
     num_folders = 0
 
     for item in files_and_folders:
-        if item['mimeType'] == 'application/vnd.google-apps.folder':
+        if item["mimeType"] == "application/vnd.google-apps.folder":
             # It's a folder, increment folder count
-            child_num_files, child_num_folders = count_child_objects(item['id'], svc)
+            child_num_files, child_num_folders = count_child_objects(item["id"], svc)
             num_files += child_num_files
             num_folders += child_num_folders + 1
         else:
@@ -143,40 +156,45 @@ def count_child_objects(folder_id, drive_service=None):
 
     return num_files, num_folders
 
+
 # Define a function to copy child objects recursively
 def _create_progress_tracker(progress_log_every):
     return {
-        'start_time': time.monotonic(),
-        'copied_files': 0,
-        'created_folders': 0,
-        'failed_files': 0,
-        'processed_since_log': 0,
-        'progress_log_every': max(1, int(progress_log_every)),
+        "start_time": time.monotonic(),
+        "copied_files": 0,
+        "created_folders": 0,
+        "failed_files": 0,
+        "processed_since_log": 0,
+        "progress_log_every": max(1, int(progress_log_every)),
     }
 
 
 def _log_progress_if_needed(progress_tracker, force=False):
-    if not force and progress_tracker['processed_since_log'] < progress_tracker['progress_log_every']:
+    if (
+        not force
+        and progress_tracker["processed_since_log"]
+        < progress_tracker["progress_log_every"]
+    ):
         return
 
-    elapsed = time.monotonic() - progress_tracker['start_time']
+    elapsed = time.monotonic() - progress_tracker["start_time"]
     logging.info(
-        'COPY PROGRESS: files=%d folders=%d failed=%d elapsed=%.2fs',
-        progress_tracker['copied_files'],
-        progress_tracker['created_folders'],
-        progress_tracker['failed_files'],
+        "COPY PROGRESS: files=%d folders=%d failed=%d elapsed=%.2fs",
+        progress_tracker["copied_files"],
+        progress_tracker["created_folders"],
+        progress_tracker["failed_files"],
         elapsed,
     )
-    progress_tracker['processed_since_log'] = 0
+    progress_tracker["processed_since_log"] = 0
 
 
 def _log_progress_summary(progress_tracker):
-    elapsed = time.monotonic() - progress_tracker['start_time']
+    elapsed = time.monotonic() - progress_tracker["start_time"]
     logging.info(
-        'COPY PROGRESS SUMMARY: files=%d folders=%d failed=%d total_elapsed=%.2fs',
-        progress_tracker['copied_files'],
-        progress_tracker['created_folders'],
-        progress_tracker['failed_files'],
+        "COPY PROGRESS SUMMARY: files=%d folders=%d failed=%d total_elapsed=%.2fs",
+        progress_tracker["copied_files"],
+        progress_tracker["created_folders"],
+        progress_tracker["failed_files"],
         elapsed,
     )
 
@@ -185,6 +203,7 @@ def copy_child_objects(
     src_folder_id,
     dest_folder_id,
     drive_service=None,
+    *,
     max_retries=1,
     progress_tracker=None,
     progress_log_every=DEFAULT_PROGRESS_LOG_EVERY,
@@ -205,61 +224,69 @@ def copy_child_objects(
     # List files in the source folder
     query = f"'{src_folder_id}' in parents"
     results = svc.files().list(q=query).execute()
-    files = results.get('files', [])
+    files = results.get("files", [])
 
     try:
         # Copy each file to the destination folder
         for file in files:
-            file_metadata = {'name': file['name'], 'parents': [dest_folder_id]}
+            file_metadata = {"name": file["name"], "parents": [dest_folder_id]}
             # Retry loop
             for retry_attempt in range(max_retries):
                 try:
                     # Attempt to copy the file
-                    svc.files().copy(fileId=file['id'], body=file_metadata).execute()
-                    tracker['copied_files'] += 1
-                    tracker['processed_since_log'] += 1
+                    svc.files().copy(fileId=file["id"], body=file_metadata).execute()
+                    tracker["copied_files"] += 1
+                    tracker["processed_since_log"] += 1
                     _log_progress_if_needed(tracker)
                     # If the copy is successful, break out of the retry loop
                     break
                 except HttpError as error_msg:
                     if retry_attempt < max_retries - 1:
                         # Log the error and retry
-                        logging.error("Error copying file %s, retrying... (%d/%d)",
-                                      file['name'], retry_attempt + 1, max_retries)
+                        logging.error(
+                            "Error copying file %s, retrying... (%d/%d)",
+                            file["name"],
+                            retry_attempt + 1,
+                            max_retries,
+                        )
                     else:
                         # If all retries fail, log the error and move on to the next file
-                        logging.error("Error copying file %s after %d retries: %s",
-                                      file['name'], max_retries, error_msg)
-                        tracker['failed_files'] += 1
-                        tracker['processed_since_log'] += 1
+                        logging.error(
+                            "Error copying file %s after %d retries: %s",
+                            file["name"],
+                            max_retries,
+                            error_msg,
+                        )
+                        tracker["failed_files"] += 1
+                        tracker["processed_since_log"] += 1
                         _log_progress_if_needed(tracker)
                         break
 
     except HttpError as error_msg:
         # Handle errors related to copying files
-        handle_copy_error(file['name'], error_msg, svc)
+        handle_copy_error(file["name"], error_msg, svc)
 
     # List folders in the source folder
     query = f"'{src_folder_id}' in parents and mimeType = '{MIME_FOLDER}'"
     results = svc.files().list(q=query).execute()
-    folders = results.get('files', [])
+    folders = results.get("files", [])
 
     # Recursively copy child objects to the destination folder while preserving structure
     for folder in folders:
         # Create a new folder in the destination with the same name
         new_folder_metadata = {
-            'name': folder['name'],
-            'parents': [dest_folder_id],
-            'mimeType': 'application/vnd.google-apps.folder'
+            "name": folder["name"],
+            "parents": [dest_folder_id],
+            "mimeType": "application/vnd.google-apps.folder",
         }
-        new_folder = svc.files().create(body=new_folder_metadata, fields='id').execute()
-        tracker['created_folders'] += 1
-        tracker['processed_since_log'] += 1
+        new_folder = svc.files().create(body=new_folder_metadata, fields="id").execute()
+        tracker["created_folders"] += 1
+        tracker["processed_since_log"] += 1
         _log_progress_if_needed(tracker)
         # Recursively copy the child objects into the new folder
         copy_child_objects(
-            folder['id'],
-            new_folder['id'],
+            folder["id"],
+            new_folder["id"],
             svc,
             max_retries=max_retries,
             progress_tracker=tracker,
@@ -269,6 +296,7 @@ def copy_child_objects(
     if root_call:
         _log_progress_if_needed(tracker, force=True)
         _log_progress_summary(tracker)
+
 
 # Define a function to handle copy errors
 def handle_copy_error(file_or_folder_name, error, drive_service=None):
@@ -282,21 +310,22 @@ def handle_copy_error(file_or_folder_name, error, drive_service=None):
     """
     svc = drive_service or service
     # If the error is related to copying a file, try to retrieve its parent folder(s)
-    if isinstance(error, HttpError) and 'fileId' in error.__dict__:
-        file_id = error.__dict__['fileId']
+    if isinstance(error, HttpError) and "fileId" in error.__dict__:
+        file_id = error.__dict__["fileId"]
         try:
             # Retrieve the file's metadata to get parent folder(s)
-            file_metadata = svc.files().get(fileId=file_id, fields='parents').execute()
-            parent_folder_ids = file_metadata.get('parents', [])
+            file_metadata = svc.files().get(fileId=file_id, fields="parents").execute()
+            parent_folder_ids = file_metadata.get("parents", [])
             # Construct URLs to the parent folders based on their IDs
             for folder_id in parent_folder_ids:
-                folder_url = f'https://drive.google.com/drive/folders/{folder_id}'
-                logging.error('Folder URL: %s', folder_url)
+                folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
+                logging.error("Folder URL: %s", folder_url)
         except HttpError as error_msg:
-            logging.error('ERROR-PARENT: %s', error_msg)
+            logging.error("ERROR-PARENT: %s", error_msg)
 
     # Write the error to the log file
-    logging.error('COPY FAILED: %s: %s', file_or_folder_name, error)
+    logging.error("COPY FAILED: %s: %s", file_or_folder_name, error)
+
 
 # Define a function to recursively add child records to the CSV
 def add_child_folders(folder_id, writer, drive_service=None):
@@ -309,18 +338,22 @@ def add_child_folders(folder_id, writer, drive_service=None):
         drive_service: The Google Drive service object (optional, uses global if not provided).
     """
     svc = drive_service or service
-    query = (f"'{folder_id}' in parents and "
-         f"mimeType = '{MIME_FOLDER}' and "
-         f"trashed = false")
-    results = svc.files().list(q=query, orderBy='name asc').execute()
-    folders = results.get('files', [])
+    query = (
+        f"'{folder_id}' in parents and "
+        f"mimeType = '{MIME_FOLDER}' and "
+        f"trashed = false"
+    )
+    results = svc.files().list(q=query, orderBy="name asc").execute()
+    folders = results.get("files", [])
     for folder in folders:
-        folder_id = folder['id']
+        folder_id = folder["id"]
         num_files, num_folders = count_child_objects(folder_id, svc)
-        writer.writerow([folder['name'], num_files, num_folders])
+        writer.writerow([folder["name"], num_files, num_folders])
+
 
 # Enable pylint for no-member again
 # pylint: enable=no-member
+
 
 # Compare the two assessments CSV files
 def compare_csv_files(file1, file2):
@@ -339,34 +372,37 @@ def compare_csv_files(file1, file2):
     if assessment2.equals(assessment3):
         logging.info("VALIDATION SUCCESSFUL!")
     else:
-        logging.error("VALIDATION FAILED - Source & Destination folder counts do not match.")
+        logging.error(
+            "VALIDATION FAILED - Source & Destination folder counts do not match."
+        )
         print("ERROR: VALIDATION FAILED!")
+
 
 def main(argv=None):
     """Main entry point for CLI."""
     global service  # pylint: disable=global-statement
 
     parser = argparse.ArgumentParser(
-        prog='drive-copy',
-        description='Google Drive report and copy utility',
+        prog="drive-copy",
+        description="Google Drive report and copy utility",
     )
     parser.add_argument(
-        '--help-env',
-        action='store_true',
-        help='Show required environment variables and exit',
+        "--help-env",
+        action="store_true",
+        help="Show required environment variables and exit",
     )
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Preview source counts and planned copy target without writing outputs or copying files',
+        "--dry-run",
+        action="store_true",
+        help="Preview source counts and planned copy target without writing outputs or copying files",
     )
     args, _ = parser.parse_known_args(argv)
 
     if args.help_env:
-        print('Required environment variables:')
-        print(f'- {CLIENT_ID_ENV_VAR}')
-        print(f'- {SOURCE_FOLDER_ID_ENV_VAR}')
-        print(f'- {DESTINATION_FOLDER_ID_ENV_VAR}')
+        print("Required environment variables:")
+        print(f"- {CLIENT_ID_ENV_VAR}")
+        print(f"- {SOURCE_FOLDER_ID_ENV_VAR}")
+        print(f"- {DESTINATION_FOLDER_ID_ENV_VAR}")
         return
 
     if not args.dry_run:
@@ -374,8 +410,8 @@ def main(argv=None):
         # This is done here (not at module level) to avoid FileNotFoundError on import
         # when the directory does not yet exist (the original RCA for CI failures).
         os.makedirs(OUTPUTS_DIRECTORY, exist_ok=True)
-        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M')
-        log_file_path = os.path.join(OUTPUTS_DIRECTORY, f'gcp-{timestamp}.log')
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M")
+        log_file_path = os.path.join(OUTPUTS_DIRECTORY, f"gcp-{timestamp}.log")
         file_handler = logging.FileHandler(log_file_path)
         file_handler.setFormatter(logging.Formatter(LOG_FILE_FORMAT))
         logging.getLogger().addHandler(file_handler)
@@ -390,11 +426,17 @@ def main(argv=None):
 
     # Check if the environment variables are set
     if not client_id_file:
-        raise ValueError(f"{MISSING_ENVAR_TXT} Google Drive API Client ID JSON: {CLIENT_ID_ENV_VAR}")
+        raise ValueError(
+            f"{MISSING_ENVAR_TXT} Google Drive API Client ID JSON: {CLIENT_ID_ENV_VAR}"
+        )
     if not source_folder_id:
-        raise ValueError(f"{MISSING_ENVAR_TXT} Source folder ID: {SOURCE_FOLDER_ID_ENV_VAR}")
+        raise ValueError(
+            f"{MISSING_ENVAR_TXT} Source folder ID: {SOURCE_FOLDER_ID_ENV_VAR}"
+        )
     if not destination_folder_id:
-        raise ValueError(f"{MISSING_ENVAR_TXT} Destination folder ID: {DESTINATION_FOLDER_ID_ENV_VAR}")
+        raise ValueError(
+            f"{MISSING_ENVAR_TXT} Destination folder ID: {DESTINATION_FOLDER_ID_ENV_VAR}"
+        )
 
     # Authenticate and authorize the user
     authed_credentials = authenticate_and_authorize(client_id_file, SCOPES)
@@ -408,22 +450,30 @@ def main(argv=None):
 
     # Get folder names
     # pylint: disable=no-member
-    source_folder_name = service.files().get(fileId=source_folder_id, fields='name').execute()
-    destination_folder_name = service.files().get(fileId=destination_folder_id, fields='name').execute()
+    source_folder_name = (
+        service.files().get(fileId=source_folder_id, fields="name").execute()
+    )
+    destination_folder_name = (
+        service.files().get(fileId=destination_folder_id, fields="name").execute()
+    )
     # pylint: enable=no-member
 
     total_num_files, total_num_folders = count_child_objects(source_folder_id, service)
 
     if args.dry_run:
-        print('DRY RUN: no files will be copied and no output artifacts will be written.')
+        print(
+            "DRY RUN: no files will be copied and no output artifacts will be written."
+        )
         print(
             f"Source '{source_folder_name['name']}' -> Destination '{destination_folder_name['name']}'"
         )
-        print(f'Planned object scan: files={total_num_files}, folders={total_num_folders}')
+        print(
+            f"Planned object scan: files={total_num_files}, folders={total_num_folders}"
+        )
         logging.info(
             "DRY RUN: source=%s destination=%s files=%d folders=%d",
-            source_folder_name['name'],
-            destination_folder_name['name'],
+            source_folder_name["name"],
+            destination_folder_name["name"],
             total_num_files,
             total_num_folders,
         )
@@ -431,51 +481,60 @@ def main(argv=None):
 
     logging.info("STARTING ASSESSMENTS...")
     # ASSESSEMENT 1 - Write the results to a CSV file
-    csv_file = './outputs/assessment-1.csv'
-    with open(csv_file, 'w', newline='', encoding='utf-8') as output_file:
+    csv_file = "./outputs/assessment-1.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8") as output_file:
         # Get the name of the source folder
         writer = csv.writer(output_file)
-        writer.writerow(['Folder Name', 'Number of Files', 'Number of Folders'])
-        writer.writerow([source_folder_name['name'], total_num_files, total_num_folders])
+        writer.writerow(["Folder Name", "Number of Files", "Number of Folders"])
+        writer.writerow(
+            [source_folder_name["name"], total_num_files, total_num_folders]
+        )
 
     # ASSESSEMENT 2 - Write the results to a CSV file
-    csv_file = './outputs/assessment-2.csv'
-    with open(csv_file, 'w', newline='', encoding='utf-8') as output_file:
+    csv_file = "./outputs/assessment-2.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8") as output_file:
         writer = csv.writer(output_file)
-        writer.writerow(['Folder Name', 'Number of Files', 'Number of Child Folders'])
+        writer.writerow(["Folder Name", "Number of Files", "Number of Child Folders"])
         # Write the Total at the top of the CSV
-        total_num_files, total_num_folders = count_child_objects(source_folder_id, service)
-        writer.writerow(['TOTAL', total_num_files, total_num_folders])
+        total_num_files, total_num_folders = count_child_objects(
+            source_folder_id, service
+        )
+        writer.writerow(["TOTAL", total_num_files, total_num_folders])
         add_child_folders(source_folder_id, writer, service)
 
     # Copy all child objects (including nested folders and files) to the new top-level folder
-    logging.info("STARTING COPY TO %s...", destination_folder_name['name'])
+    logging.info("STARTING COPY TO %s...", destination_folder_name["name"])
     copy_child_objects(source_folder_id, destination_folder_id, service)
     logging.info("COPY COMPLETED!")
 
     # ASSESSEMENT 3 - Write the results to a CSV file
-    csv_file = './outputs/assessment-3.csv'
-    with open(csv_file, 'w', newline='', encoding='utf-8') as output_file:
+    csv_file = "./outputs/assessment-3.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8") as output_file:
         writer = csv.writer(output_file)
-        writer.writerow(['Folder Name', 'Number of Files', 'Number of Child Folders'])
+        writer.writerow(["Folder Name", "Number of Files", "Number of Child Folders"])
 
         # Write the Total at the top of the CSV
-        total_num_files, total_num_folders = count_child_objects(destination_folder_id, service)
-        writer.writerow(['TOTAL', total_num_files, total_num_folders])
+        total_num_files, total_num_folders = count_child_objects(
+            destination_folder_id, service
+        )
+        writer.writerow(["TOTAL", total_num_files, total_num_folders])
         add_child_folders(destination_folder_id, writer, service)
 
     logging.info("ASSESSMENTS COMPLETED!")
 
     logging.info("STARTING VALIDATION...")
     # Load source and destination file count CSV reports
-    output_2 = './outputs/assessment-2.csv'
-    output_3 = './outputs/assessment-3.csv'
+    output_2 = "./outputs/assessment-2.csv"
+    output_3 = "./outputs/assessment-3.csv"
 
     compare_csv_files(output_2, output_3)
 
     # FINISH SCRIPT
-    logging.info("COPIED: %s to %s", source_folder_name['name'], destination_folder_name['name'])
+    logging.info(
+        "COPIED: %s to %s", source_folder_name["name"], destination_folder_name["name"]
+    )
     print("SCRIPT COMPLETED!")
+
 
 if __name__ == "__main__":
     main()
