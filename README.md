@@ -74,6 +74,10 @@ drive-copy --help-env
 # Optional: preview copy scope without writing outputs or copying files
 drive-copy --dry-run
 
+# Copy mode logs periodic progress telemetry and a final elapsed-time summary
+# (for long-running folder copies)
+drive-copy
+
 # Alternate valid path (module execution)
 python -m gcp.copy_folder
 ```

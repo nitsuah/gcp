@@ -18,8 +18,7 @@ Last Updated: 2026-04-03 (pmo/q2-2026-planning)
 
 ## 2026 Q3 (Planned)
 
-- [ ] Add dry-run mode for copy operations.
-- [ ] Add progress telemetry for large folder copies.
+- [x] Add progress telemetry for large folder copies.
 - [ ] Add selective copy filters by file type.
 
 ## 2026 Q4 (Exploratory)

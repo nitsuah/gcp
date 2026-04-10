@@ -25,8 +25,9 @@ Last Updated: 2026-04-03 (pmo/q2-2026-planning)
 
 ## Todo
 
-- [ ] Add progress telemetry for long-running copy operations.
-  - Priority: P2
-  - Problem: large copy jobs still provide poor visibility.
-  - Acceptance Criteria: the tool logs periodic progress updates and a final duration summary.
+## Done
+
+- [x] Add progress telemetry for long-running copy operations.
+  - Completed: 2026-04-03
+  - Evidence: `gcp/copy_folder.py` now logs periodic `COPY PROGRESS` updates plus a final `COPY PROGRESS SUMMARY` with elapsed duration; covered by `tests/test_copy_folder_extended.py`.
 
