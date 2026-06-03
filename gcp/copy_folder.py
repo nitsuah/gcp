@@ -7,7 +7,9 @@ import csv
 import datetime
 import logging
 import os
+import random
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -29,6 +31,23 @@ DESTINATION_FOLDER_ID_ENV_VAR = "GOOGLE_DRIVE_DESTINATION_FOLDER_ID"
 MISSING_ENVAR_TXT = "Missing environment variable for"
 MIME_FOLDER = "application/vnd.google-apps.folder"
 DEFAULT_PROGRESS_LOG_EVERY = 25
+DEFAULT_MAX_BACKOFF = 60.0
+DEFAULT_WORKERS = 1
+
+# Convenience aliases for --include-mime / --exclude-mime CLI args
+MIME_ALIASES = {
+    "docs": "application/vnd.google-apps.document",
+    "sheets": "application/vnd.google-apps.spreadsheet",
+    "slides": "application/vnd.google-apps.presentation",
+    "forms": "application/vnd.google-apps.form",
+    "drawings": "application/vnd.google-apps.drawing",
+    "pdf": "application/pdf",
+    "images": "image/",
+    "text": "text/",
+    "video": "video/",
+    "audio": "audio/",
+    "zip": "application/zip",
+}
 
 # Directories and filenames
 OUTPUTS_DIRECTORY = "./outputs/"
@@ -50,6 +69,34 @@ logging.basicConfig(level=logging.INFO, format=LOG_FILE_FORMAT)
 # Module-level variables will be initialized in main()
 # This prevents execution on import
 service = None  # pylint: disable=invalid-name
+
+
+def _resolve_mime_aliases(mime_list):
+    """Expand short alias tokens (e.g. 'docs', 'pdf') to full MIME type strings."""
+    return [MIME_ALIASES.get(token.lower(), token) for token in mime_list]
+
+
+def _mime_matches(mime_type, patterns):
+    """Return True if mime_type matches any pattern (prefix match for patterns ending with /)."""
+    for pattern in patterns:
+        if pattern.endswith("/"):
+            if mime_type.startswith(pattern):
+                return True
+        elif mime_type == pattern:
+            return True
+    return False
+
+
+def _file_passes_filter(file_mime_type, include_mime, exclude_mime):
+    """
+    Return True if a file should be processed given the MIME filters.
+    exclude_mime takes priority; include_mime acts as an allowlist when non-empty.
+    """
+    if exclude_mime and _mime_matches(file_mime_type, exclude_mime):
+        return False
+    if include_mime and not _mime_matches(file_mime_type, include_mime):
+        return False
+    return True
 
 
 # Create a flow to handle the OAuth2 authentication
@@ -125,19 +172,25 @@ def count_files_and_folders(folder_id, drive_service=None):
 
 
 # Define a function to count child objects recursively
-def count_child_objects(folder_id, drive_service=None):
+def count_child_objects(
+    folder_id, drive_service=None, *, include_mime=None, exclude_mime=None
+):
     """
     Recursively counts the number of files and folders in a given folder and its subfolders.
 
     Args:
         folder_id (str): The ID of the folder to count files and folders for.
         drive_service: The Google Drive service object (optional, uses global if not provided).
+        include_mime (list): If set, only count files whose MIME type matches a pattern.
+        exclude_mime (list): If set, skip files whose MIME type matches a pattern.
 
     Returns:
         num_files (int): The total number of files in the folder and its subfolders.
         num_folders (int): The total number of folders in the folder and its subfolders.
     """
     svc = drive_service or service
+    inc = include_mime or []
+    exc = exclude_mime or []
     query = f"'{folder_id}' in parents and trashed = false"
     results = svc.files().list(q=query).execute()
     files_and_folders = results.get("files", [])
@@ -145,25 +198,87 @@ def count_child_objects(folder_id, drive_service=None):
     num_folders = 0
 
     for item in files_and_folders:
-        if item["mimeType"] == "application/vnd.google-apps.folder":
-            # It's a folder, increment folder count
-            child_num_files, child_num_folders = count_child_objects(item["id"], svc)
+        if item["mimeType"] == MIME_FOLDER:
+            child_num_files, child_num_folders = count_child_objects(
+                item["id"], svc, include_mime=include_mime, exclude_mime=exclude_mime
+            )
             num_files += child_num_files
             num_folders += child_num_folders + 1
         else:
-            # It's a file, increment file count
-            num_files += 1
+            if _file_passes_filter(item["mimeType"], inc, exc):
+                num_files += 1
 
     return num_files, num_folders
 
 
-# Define a function to copy child objects recursively
+def _dest_has_file(svc, dest_folder_id, filename):
+    """Return True if a non-trashed file with filename exists in dest_folder_id."""
+    safe_name = filename.replace("'", "\\'")
+    query = (
+        f"'{dest_folder_id}' in parents and name = '{safe_name}' "
+        f"and mimeType != '{MIME_FOLDER}' and trashed = false"
+    )
+    results = svc.files().list(q=query, fields="files(id)", pageSize=1).execute()
+    return bool(results.get("files"))
+
+
+def _dest_has_folder(svc, dest_folder_id, folder_name):
+    """Return the ID of an existing non-trashed subfolder named folder_name, or None."""
+    safe_name = folder_name.replace("'", "\\'")
+    query = (
+        f"'{dest_folder_id}' in parents and name = '{safe_name}' "
+        f"and mimeType = '{MIME_FOLDER}' and trashed = false"
+    )
+    results = svc.files().list(q=query, fields="files(id)", pageSize=1).execute()
+    files = results.get("files", [])
+    return files[0]["id"] if files else None
+
+
+def _copy_file_with_backoff(svc, file, dest_folder_id, max_retries, max_backoff):
+    """
+    Copy a single file with exponential backoff for transient and rate-limit errors.
+
+    Returns True on success, False if all retries are exhausted.
+    """
+    file_metadata = {"name": file["name"], "parents": [dest_folder_id]}
+    delay = 1.0
+    for attempt in range(max_retries):
+        try:
+            svc.files().copy(fileId=file["id"], body=file_metadata).execute()
+            return True
+        except HttpError as err:
+            is_rate_limit = err.resp.status in (429, 503)
+            if attempt < max_retries - 1:
+                sleep_time = min(delay + random.uniform(0, 1), max_backoff)
+                log_level = logging.WARNING if is_rate_limit else logging.ERROR
+                logging.log(
+                    log_level,
+                    "Error copying %s (attempt %d/%d, retry in %.1fs): %s",
+                    file["name"],
+                    attempt + 1,
+                    max_retries,
+                    sleep_time,
+                    err,
+                )
+                time.sleep(sleep_time)
+                delay = min(delay * 2, max_backoff)
+            else:
+                logging.error(
+                    "Error copying file %s after %d retries: %s",
+                    file["name"],
+                    max_retries,
+                    err,
+                )
+    return False
+
+
 def _create_progress_tracker(progress_log_every):
     return {
         "start_time": time.monotonic(),
         "copied_files": 0,
         "created_folders": 0,
         "failed_files": 0,
+        "skipped_files": 0,
         "processed_since_log": 0,
         "progress_log_every": max(1, int(progress_log_every)),
     }
@@ -179,10 +294,11 @@ def _log_progress_if_needed(progress_tracker, force=False):
 
     elapsed = time.monotonic() - progress_tracker["start_time"]
     logging.info(
-        "COPY PROGRESS: files=%d folders=%d failed=%d elapsed=%.2fs",
+        "COPY PROGRESS: files=%d folders=%d failed=%d skipped=%d elapsed=%.2fs",
         progress_tracker["copied_files"],
         progress_tracker["created_folders"],
         progress_tracker["failed_files"],
+        progress_tracker["skipped_files"],
         elapsed,
     )
     progress_tracker["processed_since_log"] = 0
@@ -191,104 +307,140 @@ def _log_progress_if_needed(progress_tracker, force=False):
 def _log_progress_summary(progress_tracker):
     elapsed = time.monotonic() - progress_tracker["start_time"]
     logging.info(
-        "COPY PROGRESS SUMMARY: files=%d folders=%d failed=%d total_elapsed=%.2fs",
+        "COPY PROGRESS SUMMARY: files=%d folders=%d failed=%d skipped=%d total_elapsed=%.2fs",
         progress_tracker["copied_files"],
         progress_tracker["created_folders"],
         progress_tracker["failed_files"],
+        progress_tracker["skipped_files"],
         elapsed,
     )
 
 
+# Define a function to copy child objects recursively
 def copy_child_objects(
     src_folder_id,
     dest_folder_id,
     drive_service=None,
     *,
     max_retries=1,
+    max_backoff=DEFAULT_MAX_BACKOFF,
+    workers=DEFAULT_WORKERS,
+    include_mime=None,
+    exclude_mime=None,
+    skip_existing=False,
     progress_tracker=None,
     progress_log_every=DEFAULT_PROGRESS_LOG_EVERY,
 ):
     """
     Copies all child objects (files and folders) from source folder to a destination folder.
-    Includes a static retry mechanism for file copy failures.
 
     Args:
         src_folder_id (str): The id for the source folder.
         dest_folder_id (str): The id for the destination folder.
         drive_service: The Google Drive service object (optional, uses global if not provided).
-        max_retries=1 (int): The maximum number of times to retry copying a file before giving up.
+        max_retries (int): Maximum retry attempts per file (with exponential backoff).
+        max_backoff (float): Maximum backoff delay in seconds between retries.
+        workers (int): Number of parallel copy workers (1 = sequential).
+        include_mime (list): If set, only copy files whose MIME type matches a pattern.
+        exclude_mime (list): If set, skip files whose MIME type matches a pattern.
+        skip_existing (bool): If True, skip files/folders already present in destination.
     """
     svc = drive_service or service
     root_call = progress_tracker is None
     tracker = progress_tracker or _create_progress_tracker(progress_log_every)
-    # List files in the source folder
+    inc = include_mime or []
+    exc = exclude_mime or []
+
+    # List all items in the source folder (files + subfolders handled separately below)
     query = f"'{src_folder_id}' in parents"
     results = svc.files().list(q=query).execute()
-    files = results.get("files", [])
+    all_items = results.get("files", [])
 
-    try:
-        # Copy each file to the destination folder
-        for file in files:
-            file_metadata = {"name": file["name"], "parents": [dest_folder_id]}
-            # Retry loop
-            for retry_attempt in range(max_retries):
-                try:
-                    # Attempt to copy the file
-                    svc.files().copy(fileId=file["id"], body=file_metadata).execute()
+    # Partition into files-to-copy and skipped
+    files_to_copy = []
+    for item in all_items:
+        mime = item.get("mimeType", "")
+        if mime == MIME_FOLDER:
+            continue  # folders are handled in the second pass
+        if skip_existing and _dest_has_file(svc, dest_folder_id, item["name"]):
+            logging.debug("Skipping existing file: %s", item["name"])
+            tracker["skipped_files"] += 1
+            tracker["processed_since_log"] += 1
+            _log_progress_if_needed(tracker)
+            continue
+        if _file_passes_filter(mime, inc, exc):
+            files_to_copy.append(item)
+        else:
+            tracker["skipped_files"] += 1
+            tracker["processed_since_log"] += 1
+            _log_progress_if_needed(tracker)
+
+    def _copy_one(file):
+        success = _copy_file_with_backoff(
+            svc, file, dest_folder_id, max_retries, max_backoff
+        )
+        return file, success
+
+    if workers > 1:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_copy_one, f): f for f in files_to_copy}
+            for future in as_completed(futures):
+                file, success = future.result()
+                if success:
                     tracker["copied_files"] += 1
-                    tracker["processed_since_log"] += 1
-                    _log_progress_if_needed(tracker)
-                    # If the copy is successful, break out of the retry loop
-                    break
-                except HttpError as error_msg:
-                    if retry_attempt < max_retries - 1:
-                        # Log the error and retry
-                        logging.error(
-                            "Error copying file %s, retrying... (%d/%d)",
-                            file["name"],
-                            retry_attempt + 1,
-                            max_retries,
-                        )
-                    else:
-                        # If all retries fail, log the error and move on to the next file
-                        logging.error(
-                            "Error copying file %s after %d retries: %s",
-                            file["name"],
-                            max_retries,
-                            error_msg,
-                        )
-                        tracker["failed_files"] += 1
-                        tracker["processed_since_log"] += 1
-                        _log_progress_if_needed(tracker)
-                        break
+                else:
+                    tracker["failed_files"] += 1
+                    handle_copy_error(
+                        file["name"], RuntimeError("Max retries exceeded"), svc
+                    )
+                tracker["processed_since_log"] += 1
+                _log_progress_if_needed(tracker)
+    else:
+        for file in files_to_copy:
+            success = _copy_file_with_backoff(
+                svc, file, dest_folder_id, max_retries, max_backoff
+            )
+            if success:
+                tracker["copied_files"] += 1
+            else:
+                tracker["failed_files"] += 1
+                handle_copy_error(
+                    file["name"], RuntimeError("Max retries exceeded"), svc
+                )
+            tracker["processed_since_log"] += 1
+            _log_progress_if_needed(tracker)
 
-    except HttpError as error_msg:
-        # Handle errors related to copying files
-        handle_copy_error(file["name"], error_msg, svc)
-
-    # List folders in the source folder
+    # List folders in the source folder and recurse
     query = f"'{src_folder_id}' in parents and mimeType = '{MIME_FOLDER}'"
     results = svc.files().list(q=query).execute()
     folders = results.get("files", [])
 
-    # Recursively copy child objects to the destination folder while preserving structure
     for folder in folders:
-        # Create a new folder in the destination with the same name
-        new_folder_metadata = {
-            "name": folder["name"],
-            "parents": [dest_folder_id],
-            "mimeType": "application/vnd.google-apps.folder",
-        }
-        new_folder = svc.files().create(body=new_folder_metadata, fields="id").execute()
-        tracker["created_folders"] += 1
+        existing_folder_id = _dest_has_folder(svc, dest_folder_id, folder["name"]) if skip_existing else None
+        if existing_folder_id:
+            logging.debug("Reusing existing folder: %s", folder["name"])
+            child_dest_id = existing_folder_id
+        else:
+            new_folder_metadata = {
+                "name": folder["name"],
+                "parents": [dest_folder_id],
+                "mimeType": MIME_FOLDER,
+            }
+            new_folder = svc.files().create(body=new_folder_metadata, fields="id").execute()
+            child_dest_id = new_folder["id"]
+            tracker["created_folders"] += 1
         tracker["processed_since_log"] += 1
         _log_progress_if_needed(tracker)
-        # Recursively copy the child objects into the new folder
         copy_child_objects(
             folder["id"],
-            new_folder["id"],
+            child_dest_id,
             svc,
             max_retries=max_retries,
+            max_backoff=max_backoff,
+            workers=workers,
+            include_mime=include_mime,
+            exclude_mime=exclude_mime,
+            skip_existing=skip_existing,
             progress_tracker=tracker,
             progress_log_every=progress_log_every,
         )
@@ -396,6 +548,49 @@ def main(argv=None):
         action="store_true",
         help="Preview source counts and planned copy target without writing outputs or copying files",
     )
+    parser.add_argument(
+        "--include-mime",
+        metavar="MIME",
+        help=(
+            "Comma-separated MIME type patterns to include "
+            "(aliases: docs, sheets, slides, forms, drawings, pdf, images, text, video, audio, zip). "
+            "Prefix patterns ending in '/' match all subtypes (e.g. 'image/')."
+        ),
+    )
+    parser.add_argument(
+        "--exclude-mime",
+        metavar="MIME",
+        help="Comma-separated MIME type patterns to exclude (same aliases as --include-mime).",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=DEFAULT_WORKERS,
+        metavar="N",
+        help=f"Number of parallel copy workers (default: {DEFAULT_WORKERS}; 1 = sequential).",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Maximum retry attempts per file copy with exponential backoff (default: 1).",
+    )
+    parser.add_argument(
+        "--max-backoff",
+        type=float,
+        default=DEFAULT_MAX_BACKOFF,
+        metavar="SECONDS",
+        help=f"Maximum exponential backoff delay in seconds (default: {DEFAULT_MAX_BACKOFF}).",
+    )
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help=(
+            "Skip files and folders that already exist in the destination "
+            "(enables safe re-runs after partial failures)."
+        ),
+    )
     args, _ = parser.parse_known_args(argv)
 
     if args.help_env:
@@ -404,6 +599,21 @@ def main(argv=None):
         print(f"- {SOURCE_FOLDER_ID_ENV_VAR}")
         print(f"- {DESTINATION_FOLDER_ID_ENV_VAR}")
         return
+
+    include_mime = (
+        _resolve_mime_aliases(
+            [t.strip() for t in args.include_mime.split(",") if t.strip()]
+        )
+        if args.include_mime
+        else []
+    )
+    exclude_mime = (
+        _resolve_mime_aliases(
+            [t.strip() for t in args.exclude_mime.split(",") if t.strip()]
+        )
+        if args.exclude_mime
+        else []
+    )
 
     if not args.dry_run:
         # Ensure the outputs directory exists and attach the file log handler.
@@ -458,18 +668,29 @@ def main(argv=None):
     )
     # pylint: enable=no-member
 
-    total_num_files, total_num_folders = count_child_objects(source_folder_id, service)
+    total_num_files, total_num_folders = count_child_objects(
+        source_folder_id, service, include_mime=include_mime, exclude_mime=exclude_mime
+    )
 
     if args.dry_run:
+        filter_note = ""
+        if include_mime:
+            filter_note += f" [include: {', '.join(include_mime)}]"
+        if exclude_mime:
+            filter_note += f" [exclude: {', '.join(exclude_mime)}]"
         print(
             "DRY RUN: no files will be copied and no output artifacts will be written."
         )
         print(
-            f"Source '{source_folder_name['name']}' -> Destination '{destination_folder_name['name']}'"
+            f"Source '{source_folder_name['name']}'"
+            f" -> Destination '{destination_folder_name['name']}'"
         )
         print(
-            f"Planned object scan: files={total_num_files}, folders={total_num_folders}"
+            f"Planned object scan: files={total_num_files},"
+            f" folders={total_num_folders}{filter_note}"
         )
+        if args.workers > 1:
+            print(f"Parallel copy enabled: {args.workers} workers")
         logging.info(
             "DRY RUN: source=%s destination=%s files=%d folders=%d",
             source_folder_name["name"],
@@ -480,39 +701,56 @@ def main(argv=None):
         return
 
     logging.info("STARTING ASSESSMENTS...")
-    # ASSESSEMENT 1 - Write the results to a CSV file
+    if include_mime:
+        logging.info("MIME include filter: %s", include_mime)
+    if exclude_mime:
+        logging.info("MIME exclude filter: %s", exclude_mime)
+    if args.workers > 1:
+        logging.info("Parallel copy: %d workers", args.workers)
+    if args.skip_existing:
+        logging.info("Skip-existing mode: files/folders already in destination will be skipped")
+
+    # ASSESSMENT 1 - Write the results to a CSV file
     csv_file = "./outputs/assessment-1.csv"
     with open(csv_file, "w", newline="", encoding="utf-8") as output_file:
-        # Get the name of the source folder
         writer = csv.writer(output_file)
         writer.writerow(["Folder Name", "Number of Files", "Number of Folders"])
         writer.writerow(
             [source_folder_name["name"], total_num_files, total_num_folders]
         )
 
-    # ASSESSEMENT 2 - Write the results to a CSV file
+    # ASSESSMENT 2 - Write the results to a CSV file
     csv_file = "./outputs/assessment-2.csv"
     with open(csv_file, "w", newline="", encoding="utf-8") as output_file:
         writer = csv.writer(output_file)
         writer.writerow(["Folder Name", "Number of Files", "Number of Child Folders"])
         # Write the Total at the top of the CSV
         total_num_files, total_num_folders = count_child_objects(
-            source_folder_id, service
+            source_folder_id, service, include_mime=include_mime, exclude_mime=exclude_mime
         )
         writer.writerow(["TOTAL", total_num_files, total_num_folders])
         add_child_folders(source_folder_id, writer, service)
 
     # Copy all child objects (including nested folders and files) to the new top-level folder
     logging.info("STARTING COPY TO %s...", destination_folder_name["name"])
-    copy_child_objects(source_folder_id, destination_folder_id, service)
+    copy_child_objects(
+        source_folder_id,
+        destination_folder_id,
+        service,
+        max_retries=args.max_retries,
+        max_backoff=args.max_backoff,
+        workers=args.workers,
+        include_mime=include_mime,
+        exclude_mime=exclude_mime,
+        skip_existing=args.skip_existing,
+    )
     logging.info("COPY COMPLETED!")
 
-    # ASSESSEMENT 3 - Write the results to a CSV file
+    # ASSESSMENT 3 - Write the results to a CSV file
     csv_file = "./outputs/assessment-3.csv"
     with open(csv_file, "w", newline="", encoding="utf-8") as output_file:
         writer = csv.writer(output_file)
         writer.writerow(["Folder Name", "Number of Files", "Number of Child Folders"])
-
         # Write the Total at the top of the CSV
         total_num_files, total_num_folders = count_child_objects(
             destination_folder_id, service

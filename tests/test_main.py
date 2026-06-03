@@ -69,8 +69,10 @@ class TestMainFunction:
         # Verify count was called for source and destination
         assert mock_count.call_count == 3  # Once for assessment-1, once each for assessment-2 & 3
 
-        # Verify copy was called
-        mock_copy.assert_called_once_with('source123', 'dest456', mock_service)
+        # Verify copy was called with the expected positional args (kwargs may vary by version)
+        assert mock_copy.call_count == 1
+        call_args = mock_copy.call_args
+        assert call_args.args[:3] == ('source123', 'dest456', mock_service)
 
         # Verify comparison was called
         mock_compare.assert_called_once_with('./outputs/assessment-2.csv', './outputs/assessment-3.csv')

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (Q3 2026)
+
+- **Selective copy filters by file type** (`--include-mime`, `--exclude-mime`): copy only docs,
+  PDFs, images, or any MIME type pattern; aliases like `docs`, `sheets`, `pdf`, `images` expand
+  to full MIME strings; prefix patterns (e.g. `image/`) match all subtypes.
+- **Exponential backoff with rate-limit awareness**: retry loop now backs off exponentially
+  (starting at 1 s, capped at `--max-backoff`, default 60 s) with jitter; 429/503 responses
+  are logged at WARNING rather than ERROR to distinguish rate-limiting from hard failures.
+- **Parallel file copy** (`--workers N`): ThreadPoolExecutor-based parallel copy of files
+  within each folder level; folder creation remains sequential to preserve parent IDs.
+- **`--max-retries` CLI arg**: configures per-file retry attempts (previously hardcoded to 1).
+- **`--max-backoff` CLI arg**: caps the exponential backoff delay in seconds.
+- **`skipped_files` counter** added to progress telemetry and final summary when MIME filters
+  are active.
+- **Incremental / skip-existing copy** (`--skip-existing`): files already present in the
+  destination are skipped rather than duplicated; existing subfolders are reused rather than
+  recreated — enables safe re-runs after partial failures.
+- **`tests/test_q3_features.py`**: 35 new tests covering MIME filter helpers,
+  filtered counts, filtered copy, exponential backoff, parallel copy, skip-existing, and CLI args.
+
 ### Added
 
 - Documentation compliance updates for Overseer standards

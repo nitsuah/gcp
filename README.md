@@ -68,14 +68,31 @@ GOOGLE_DRIVE_DESTINATION_FOLDER_ID=xyz456abc
 # Canonical packaged entrypoint
 drive-copy
 
-# Optional: print required environment variable names
+# Print required environment variable names
 drive-copy --help-env
 
-# Optional: preview copy scope without writing outputs or copying files
+# Preview copy scope without writing outputs or copying files
 drive-copy --dry-run
 
-# Copy mode logs periodic progress telemetry and a final elapsed-time summary
-# (for long-running folder copies)
+# Copy only Google Docs and PDFs (aliases: docs, sheets, slides, pdf, images, text, video, audio, zip)
+drive-copy --include-mime docs,pdf
+
+# Copy everything except images and videos (prefix 'image/' matches all image subtypes)
+drive-copy --exclude-mime images,video
+
+# Combine filters with dry-run to preview what would be copied
+drive-copy --dry-run --include-mime docs,sheets
+
+# Parallel copy with 4 workers (files within each folder level are copied concurrently)
+drive-copy --workers 4
+
+# Retry up to 5 times with exponential backoff capped at 120 s (rate-limit friendly)
+drive-copy --max-retries 5 --max-backoff 120
+
+# Re-run safely after a partial failure — already-copied files and folders are skipped
+drive-copy --skip-existing
+
+# Copy mode logs periodic COPY PROGRESS updates and a final COPY PROGRESS SUMMARY
 drive-copy
 
 # Alternate valid path (module execution)
