@@ -121,3 +121,9 @@ See `examples/report-sample.json` for complete structure.
 - [![Bandit](https://github.com/nitsuah/gcp/actions/workflows/bandit.yml/badge.svg)](https://github.com/nitsuah/gcp/actions/workflows/bandit.yml)
 - [![CodeQL](https://github.com/nitsuah/gcp/actions/workflows/codeql.yml/badge.svg)](https://github.com/nitsuah/gcp/actions/workflows/codeql.yml)
 - [![Dependency Review](https://github.com/nitsuah/gcp/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/nitsuah/gcp/actions/workflows/dependency-review.yml)
+## Community Standards
+
+Shared community policies are centralized in https://github.com/nitsuah/.github:
+- Contributing: https://github.com/nitsuah/.github/blob/main/CONTRIBUTING.md
+- Code of Conduct: https://github.com/nitsuah/.github/blob/main/CODE_OF_CONDUCT.md
+- Security: https://github.com/nitsuah/.github/blob/main/SECURITY.md
