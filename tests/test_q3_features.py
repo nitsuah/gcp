@@ -11,6 +11,8 @@ from googleapiclient.errors import HttpError
 from gcp.copy_folder import (
     MIME_ALIASES,
     _copy_file_with_backoff,
+    _dest_has_file,
+    _dest_has_folder,
     _file_passes_filter,
     _mime_matches,
     _resolve_mime_aliases,
@@ -502,3 +504,130 @@ class TestCLIArgs:
 
         out = capsys.readouterr().out
         assert "4 workers" in out
+
+    @patch("gcp.copy_folder.authenticate_and_authorize")
+    @patch("gcp.copy_folder.create_drive_service")
+    @patch("gcp.copy_folder.count_child_objects", return_value=(2, 0))
+    def test_dry_run_with_skip_existing_flag(
+        self, _mock_count, mock_svc, mock_auth, capsys
+    ):
+        """Test that --skip-existing is accepted without error in dry-run."""
+        mock_auth.return_value = Mock(valid=True)
+        svc = MagicMock()
+        mock_svc.return_value = svc
+        svc.files().get().execute.return_value = {"name": "Folder"}
+
+        with patch.dict(
+            os.environ,
+            {
+                "GOOGLE_DRIVE_CLIENT_ID_FILE": "fake.json",
+                "GOOGLE_DRIVE_SOURCE_FOLDER_ID": "src",
+                "GOOGLE_DRIVE_DESTINATION_FOLDER_ID": "dst",
+            },
+        ):
+            main(["--dry-run", "--skip-existing"])
+
+        out = capsys.readouterr().out
+        assert "DRY RUN" in out
+
+
+# ---------------------------------------------------------------------------
+# Skip-existing helpers and integration
+# ---------------------------------------------------------------------------
+
+
+class TestDestHasFile:
+    """Test the _dest_has_file existence check helper."""
+
+    def test_file_exists_returns_true(self, mock_service):
+        """Test that True is returned when a matching file is found in the destination."""
+        mock_service.files().list().execute.return_value = {"files": [{"id": "f1"}]}
+        assert _dest_has_file(mock_service, "dest_folder", "report.pdf") is True
+
+    def test_file_absent_returns_false(self, mock_service):
+        """Test that False is returned when no matching file is found."""
+        mock_service.files().list().execute.return_value = {"files": []}
+        assert _dest_has_file(mock_service, "dest_folder", "report.pdf") is False
+
+
+class TestDestHasFolder:
+    """Test the _dest_has_folder existence check helper."""
+
+    def test_folder_exists_returns_id(self, mock_service):
+        """Test that the existing folder's ID is returned when found."""
+        mock_service.files().list().execute.return_value = {"files": [{"id": "folder1"}]}
+        result = _dest_has_folder(mock_service, "dest_folder", "Archive")
+        assert result == "folder1"
+
+    def test_folder_absent_returns_none(self, mock_service):
+        """Test that None is returned when no matching subfolder is found."""
+        mock_service.files().list().execute.return_value = {"files": []}
+        result = _dest_has_folder(mock_service, "dest_folder", "Archive")
+        assert result is None
+
+
+class TestSkipExisting:
+    """Test incremental copy behaviour with skip_existing=True."""
+
+    def test_existing_file_not_copied(self, mock_service):
+        """Test that a file already in the destination is skipped and counted."""
+        mock_service.files().list().execute.side_effect = [
+            {
+                "files": [
+                    {"id": "f1", "name": "report.pdf", "mimeType": "application/pdf"},
+                ]
+            },
+            {"files": []},
+        ]
+        # _dest_has_file returns True for f1 (already exists)
+        with patch("gcp.copy_folder._dest_has_file", return_value=True):
+            with patch("gcp.copy_folder.logging.info") as mock_info:
+                copy_child_objects("src", "dest", mock_service, skip_existing=True)
+
+        mock_service.files().copy.assert_not_called()
+        summary_calls = [
+            c for c in mock_info.call_args_list
+            if c.args and "COPY PROGRESS SUMMARY" in str(c.args[0])
+        ]
+        assert len(summary_calls) == 1
+        summary_str = summary_calls[0].args[0] % summary_calls[0].args[1:]
+        assert "skipped=1" in summary_str
+
+    def test_new_file_is_copied(self, mock_service):
+        """Test that a file not yet in the destination is copied normally."""
+        mock_service.files().list().execute.side_effect = [
+            {
+                "files": [
+                    {"id": "f1", "name": "new.pdf", "mimeType": "application/pdf"},
+                ]
+            },
+            {"files": []},
+        ]
+        mock_service.files().copy().execute.return_value = {"id": "copy1"}
+
+        with patch("gcp.copy_folder._dest_has_file", return_value=False):
+            copy_child_objects("src", "dest", mock_service, skip_existing=True)
+
+        assert mock_service.files().copy.call_count >= 1
+
+    def test_existing_folder_reused_not_duplicated(self, mock_service):
+        """Test that an existing destination subfolder is reused rather than recreated."""
+        mock_service.files().list().execute.side_effect = [
+            {"files": []},  # no files
+            {
+                "files": [
+                    {
+                        "id": "sub1",
+                        "name": "Archive",
+                        "mimeType": "application/vnd.google-apps.folder",
+                    }
+                ]
+            },
+            {"files": []},  # subfolder files
+            {"files": []},  # subfolder subfolders
+        ]
+
+        with patch("gcp.copy_folder._dest_has_folder", return_value="existing_sub"):
+            copy_child_objects("src", "dest", mock_service, skip_existing=True)
+
+        mock_service.files().create.assert_not_called()

@@ -21,8 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`--max-backoff` CLI arg**: caps the exponential backoff delay in seconds.
 - **`skipped_files` counter** added to progress telemetry and final summary when MIME filters
   are active.
-- **`tests/test_q3_features.py`**: 27 new tests covering MIME filter helpers,
-  filtered counts, filtered copy, exponential backoff, parallel copy, and CLI args.
+- **Incremental / skip-existing copy** (`--skip-existing`): files already present in the
+  destination are skipped rather than duplicated; existing subfolders are reused rather than
+  recreated — enables safe re-runs after partial failures.
+- **`tests/test_q3_features.py`**: 35 new tests covering MIME filter helpers,
+  filtered counts, filtered copy, exponential backoff, parallel copy, skip-existing, and CLI args.
 
 ### Added
 

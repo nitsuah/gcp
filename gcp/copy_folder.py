@@ -211,6 +211,29 @@ def count_child_objects(
     return num_files, num_folders
 
 
+def _dest_has_file(svc, dest_folder_id, filename):
+    """Return True if a non-trashed file with filename exists in dest_folder_id."""
+    safe_name = filename.replace("'", "\\'")
+    query = (
+        f"'{dest_folder_id}' in parents and name = '{safe_name}' "
+        f"and mimeType != '{MIME_FOLDER}' and trashed = false"
+    )
+    results = svc.files().list(q=query, fields="files(id)", pageSize=1).execute()
+    return bool(results.get("files"))
+
+
+def _dest_has_folder(svc, dest_folder_id, folder_name):
+    """Return the ID of an existing non-trashed subfolder named folder_name, or None."""
+    safe_name = folder_name.replace("'", "\\'")
+    query = (
+        f"'{dest_folder_id}' in parents and name = '{safe_name}' "
+        f"and mimeType = '{MIME_FOLDER}' and trashed = false"
+    )
+    results = svc.files().list(q=query, fields="files(id)", pageSize=1).execute()
+    files = results.get("files", [])
+    return files[0]["id"] if files else None
+
+
 def _copy_file_with_backoff(svc, file, dest_folder_id, max_retries, max_backoff):
     """
     Copy a single file with exponential backoff for transient and rate-limit errors.
@@ -304,6 +327,7 @@ def copy_child_objects(
     workers=DEFAULT_WORKERS,
     include_mime=None,
     exclude_mime=None,
+    skip_existing=False,
     progress_tracker=None,
     progress_log_every=DEFAULT_PROGRESS_LOG_EVERY,
 ):
@@ -319,6 +343,7 @@ def copy_child_objects(
         workers (int): Number of parallel copy workers (1 = sequential).
         include_mime (list): If set, only copy files whose MIME type matches a pattern.
         exclude_mime (list): If set, skip files whose MIME type matches a pattern.
+        skip_existing (bool): If True, skip files/folders already present in destination.
     """
     svc = drive_service or service
     root_call = progress_tracker is None
@@ -337,6 +362,12 @@ def copy_child_objects(
         mime = item.get("mimeType", "")
         if mime == MIME_FOLDER:
             continue  # folders are handled in the second pass
+        if skip_existing and _dest_has_file(svc, dest_folder_id, item["name"]):
+            logging.debug("Skipping existing file: %s", item["name"])
+            tracker["skipped_files"] += 1
+            tracker["processed_since_log"] += 1
+            _log_progress_if_needed(tracker)
+            continue
         if _file_passes_filter(mime, inc, exc):
             files_to_copy.append(item)
         else:
@@ -385,24 +416,31 @@ def copy_child_objects(
     folders = results.get("files", [])
 
     for folder in folders:
-        new_folder_metadata = {
-            "name": folder["name"],
-            "parents": [dest_folder_id],
-            "mimeType": MIME_FOLDER,
-        }
-        new_folder = svc.files().create(body=new_folder_metadata, fields="id").execute()
-        tracker["created_folders"] += 1
+        existing_folder_id = _dest_has_folder(svc, dest_folder_id, folder["name"]) if skip_existing else None
+        if existing_folder_id:
+            logging.debug("Reusing existing folder: %s", folder["name"])
+            child_dest_id = existing_folder_id
+        else:
+            new_folder_metadata = {
+                "name": folder["name"],
+                "parents": [dest_folder_id],
+                "mimeType": MIME_FOLDER,
+            }
+            new_folder = svc.files().create(body=new_folder_metadata, fields="id").execute()
+            child_dest_id = new_folder["id"]
+            tracker["created_folders"] += 1
         tracker["processed_since_log"] += 1
         _log_progress_if_needed(tracker)
         copy_child_objects(
             folder["id"],
-            new_folder["id"],
+            child_dest_id,
             svc,
             max_retries=max_retries,
             max_backoff=max_backoff,
             workers=workers,
             include_mime=include_mime,
             exclude_mime=exclude_mime,
+            skip_existing=skip_existing,
             progress_tracker=tracker,
             progress_log_every=progress_log_every,
         )
@@ -545,6 +583,14 @@ def main(argv=None):
         metavar="SECONDS",
         help=f"Maximum exponential backoff delay in seconds (default: {DEFAULT_MAX_BACKOFF}).",
     )
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help=(
+            "Skip files and folders that already exist in the destination "
+            "(enables safe re-runs after partial failures)."
+        ),
+    )
     args, _ = parser.parse_known_args(argv)
 
     if args.help_env:
@@ -661,6 +707,8 @@ def main(argv=None):
         logging.info("MIME exclude filter: %s", exclude_mime)
     if args.workers > 1:
         logging.info("Parallel copy: %d workers", args.workers)
+    if args.skip_existing:
+        logging.info("Skip-existing mode: files/folders already in destination will be skipped")
 
     # ASSESSMENT 1 - Write the results to a CSV file
     csv_file = "./outputs/assessment-1.csv"
@@ -694,6 +742,7 @@ def main(argv=None):
         workers=args.workers,
         include_mime=include_mime,
         exclude_mime=exclude_mime,
+        skip_existing=args.skip_existing,
     )
     logging.info("COPY COMPLETED!")
 

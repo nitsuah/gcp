@@ -89,6 +89,9 @@ drive-copy --workers 4
 # Retry up to 5 times with exponential backoff capped at 120 s (rate-limit friendly)
 drive-copy --max-retries 5 --max-backoff 120
 
+# Re-run safely after a partial failure — already-copied files and folders are skipped
+drive-copy --skip-existing
+
 # Copy mode logs periodic COPY PROGRESS updates and a final COPY PROGRESS SUMMARY
 drive-copy
 
