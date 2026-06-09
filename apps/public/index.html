@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workspace Multi-Account OAuth Hub</title>
+  <!-- Google Fonts Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="glass-bg"></div>
+  <div class="container">
+    
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="logo-area">
+        <div class="glowing-orb"></div>
+        <h1>Workspace Hub</h1>
+        <span class="badge">OAuth 2.0 Engine</span>
+      </div>
+      <div id="credential-status" class="credential-status">
+        <span class="status-dot warning"></span>
+        <span class="status-text">Checking credentials...</span>
+      </div>
+    </header>
+
+    <!-- Dashboard Layout Grid -->
+    <div class="dashboard-grid">
+      
+      <!-- Left Column: Accounts and Configuration -->
+      <aside class="sidebar-card glass-panel">
+        <div class="section-title">
+          <h2>System Configuration</h2>
+        </div>
+        
+        <div class="config-item">
+          <label class="switch-container">
+            <span class="label-text">Enable Google Drive Logging</span>
+            <input type="checkbox" id="drive-logging-toggle" checked>
+            <span class="slider"></span>
+          </label>
+          <p class="config-desc">Appends execution steps and status directly to a <code>Workspace_Automation_Logs.txt</code> file in the user's Drive.</p>
+        </div>
+
+        <hr class="divider">
+
+        <div class="section-title">
+          <h2>Connected Accounts</h2>
+        </div>
+        
+        <div id="accounts-list" class="accounts-list">
+          <!-- Dynamically populated -->
+          <div class="no-accounts">No accounts connected yet.</div>
+        </div>
+
+        <button id="btn-connect" class="btn btn-primary btn-full-width">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          Connect Google Account
+        </button>
+      </aside>
+
+      <!-- Right Column: API Playground & Activity Streams -->
+      <main class="main-content">
+        
+        <!-- Live Action panel -->
+        <section class="glass-panel main-panel">
+          <div class="section-title">
+            <h2>Workspace API Playground</h2>
+            <p class="panel-subtitle">Select an account below and test real-time dynamic routing and API calls.</p>
+          </div>
+
+          <div class="account-selector-row">
+            <label for="active-account-select">Target Account Context:</label>
+            <div class="select-wrapper">
+              <select id="active-account-select" disabled>
+                <option value="">-- Connect an Account First --</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Tabs or Action buttons -->
+          <div class="action-grid">
+            
+            <!-- Gmail Card -->
+            <div class="action-card glass-card">
+              <div class="action-header">
+                <div class="action-icon gmail-color">✉</div>
+                <h3>Gmail API</h3>
+              </div>
+              <p>Fetch recent messages and display snippets using direct account auth.</p>
+              <button id="btn-list-emails" class="btn btn-secondary" disabled>List Recent Emails</button>
+            </div>
+
+            <!-- Calendar Card -->
+            <div class="action-card glass-card">
+              <div class="action-header">
+                <div class="action-icon calendar-color">📅</div>
+                <h3>Calendar API</h3>
+              </div>
+              <p>Create a test calendar event at the current time in the user's calendar.</p>
+              <button id="btn-create-event" class="btn btn-secondary" disabled>Create Test Event</button>
+            </div>
+
+            <!-- Gemini Card -->
+            <div class="action-card glass-card">
+              <div class="action-header">
+                <div class="action-icon gemini-color">✨</div>
+                <h3>Gemini API</h3>
+              </div>
+              <p>Query Gemini model using OAuth credentials and Generative Language API.</p>
+              <div class="input-inline">
+                <input type="text" id="gemini-prompt" placeholder="Ask Gemini..." value="What is the distance to the Moon?">
+                <button id="btn-query-gemini" class="btn btn-secondary" disabled>Query</button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Console/Result Screen -->
+          <div class="console-box">
+            <div class="console-header">
+              <span>Execution Output</span>
+              <button id="btn-clear-console" class="btn btn-text">Clear</button>
+            </div>
+            <div id="console-output" class="console-content">
+              Welcome to the Workspace Multi-Account dashboard.
+Connect a Google Account to explore the multi-token OAuth flow and dynamic routing.
+            </div>
+          </div>
+
+        </section>
+
+      </main>
+
+    </div>
+  </div>
+
+  <!-- Javascript -->
+  <script src="app.js"></script>
+</body>
+</html>
