@@ -17,10 +17,17 @@ import shutil
 from pathlib import Path
 
 
+def _redact_sensitive_cli_args(command):
+    """Redact sensitive CLI argument values before logging."""
+    redacted = re.sub(r"(--billing-account=)(\S+)", r"\1[REDACTED]", command)
+    redacted = re.sub(r"(--filter-projects=projects/)(\S+)", r"\1[REDACTED]", redacted)
+    return redacted
+
+
 def run_command(command, check=True, input_data=None):
     """Run a CLI command and return the result."""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B602
             command,
             shell=True,
             text=True,
@@ -28,7 +35,7 @@ def run_command(command, check=True, input_data=None):
             input=input_data,
         )
         if check and result.returncode != 0:
-            print(f"[ERROR] Command failed: {command}")
+            print(f"[ERROR] Command failed: {_redact_sensitive_cli_args(command)}")
             print(f"  stdout: {result.stdout.strip()}")
             print(f"  stderr: {result.stderr.strip()}")
             return None
@@ -101,7 +108,8 @@ def create_project(project_id):
 
 def link_billing(project_id, billing_id):
     """Link billing account to the project."""
-    print(f"[INFO] Linking billing account {billing_id} to {project_id}…")
+    masked = f"{'*' * max(len(billing_id) - 4, 0)}{billing_id[-4:]}" if billing_id else "<redacted>"
+    print(f"[INFO] Linking billing account {masked} to {project_id}…")
     res = run_command(
         f"gcloud billing projects link {project_id} --billing-account={billing_id}",
         check=False,
