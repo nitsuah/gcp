@@ -30,6 +30,7 @@ def run_command(command, check=True, input_data=None):
         result = subprocess.run(  # nosec B602
             command,
             shell=True,
+            check=False,
             text=True,
             capture_output=True,
             input=input_data,
@@ -108,8 +109,7 @@ def create_project(project_id):
 
 def link_billing(project_id, billing_id):
     """Link billing account to the project."""
-    masked = f"{'*' * max(len(billing_id) - 4, 0)}{billing_id[-4:]}" if billing_id else "<redacted>"
-    print(f"[INFO] Linking billing account {masked} to {project_id}…")
+    print(f"[INFO] Linking billing account [REDACTED] to {project_id}…")
     res = run_command(
         f"gcloud billing projects link {project_id} --billing-account={billing_id}",
         check=False,
@@ -250,7 +250,7 @@ def print_manual_oauth_steps(project_id, account):
     print("       • https://www.googleapis.com/auth/gmail.modify")
     print("       • https://www.googleapis.com/auth/calendar")
     print("       • https://www.googleapis.com/auth/drive.file")
-    print(f"     Test users: add the emails you will connect.")
+    print("     Test users: add the emails you will connect.")
     print("\n  2. Go to 'Credentials' → '+ Create Credentials' →")
     print("     'OAuth Client ID' → Application type: 'Web application'.")
     print("     Authorized redirect URI: http://localhost:3000/oauth2callback")
