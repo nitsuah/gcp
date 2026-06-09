@@ -1,10 +1,10 @@
 # GCP Google Drive Tools Roadmap
 
-Last Updated: 2026-06-03
+Last Updated: 2026-06-08
 
-## 2026 Q1–Q3 (Completed)
+## 2026 Q1–Q3 ✅
 
-All shipped features are documented in [FEATURES.md](FEATURES.md) and [CHANGELOG.md](CHANGELOG.md).
+> Completed. All shipped features documented in FEATURES.md and CHANGELOG.md.
 
 ## 2026 Q4 (Exploratory)
 
