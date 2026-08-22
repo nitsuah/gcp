@@ -74,7 +74,7 @@ drive-copy --help-env
 # Preview copy scope without writing outputs or copying files
 drive-copy --dry-run
 
-# Copy only Google Docs and PDFs (aliases: docs, sheets, slides, pdf, images, text, video, audio, zip)
+# Copy only Google Docs and PDFs (aliases: docs, sheets, slides, forms, drawings, pdf, images, text, video, audio, zip)
 drive-copy --include-mime docs,pdf
 
 # Copy everything except images and videos (prefix 'image/' matches all image subtypes)
@@ -99,8 +99,6 @@ drive-copy
 python -m gcp.copy_folder
 ```
 
-`drive-report` appears in older notes, but the packaged console script in `pyproject.toml` is `drive-copy`.
-
 ### Python Module
 
 ```python
@@ -116,15 +114,46 @@ copy_child_objects('source_id', 'destination_id')
 ## Output Schema
 
 ### CSV Format
+
+Assessment 1 (`outputs/assessment-1.csv`):
 ```csv
-Folder Name,File Count,Folder Count
+Folder Name,Number of Files,Number of Folders
+MyDrive,43,8
+```
+
+Assessment 2 and 3 (`outputs/assessment-2.csv`, `outputs/assessment-3.csv`):
+```csv
+Folder Name,Number of Files,Number of Child Folders
+TOTAL,43,8
 Design,15,3
 Documentation,28,5
-TOTAL,43,8
 ```
 
 ### JSON Format
 See `examples/report-sample.json` for complete structure.
+
+## GCP Project Setup Utility
+
+`gcp/gcp_setup.py` automates the creation and baseline configuration of a new GCP project for
+Google Workspace OAuth integrations. Run it once before using `drive-copy` to provision
+credentials without manual Console steps.
+
+```bash
+python gcp/gcp_setup.py
+```
+
+What it does:
+
+1. Verifies `gcloud` CLI is installed and prompts for login if needed
+2. Lists available billing accounts and links one to the new project
+3. Enables Gmail, Calendar, Drive, Gemini, and Billing Budgets APIs
+4. Creates a $50/month budget alert at 50 % and 90 % thresholds
+5. Attempts automated OAuth 2.0 client creation via `gcloud alpha`; falls back to
+   step-by-step manual Console instructions if the account type does not support it
+6. Writes `apps/client_secrets.json` (or a placeholder) for use by the Drive CLI
+
+**Prerequisites:** [gcloud CLI](https://cloud.google.com/sdk/docs/install) on `PATH` and
+an active GCP billing account.
 
 ## Outputs
 
@@ -138,6 +167,8 @@ See `examples/report-sample.json` for complete structure.
 - [![Bandit](https://github.com/nitsuah/gcp/actions/workflows/bandit.yml/badge.svg)](https://github.com/nitsuah/gcp/actions/workflows/bandit.yml)
 - [![CodeQL](https://github.com/nitsuah/gcp/actions/workflows/codeql.yml/badge.svg)](https://github.com/nitsuah/gcp/actions/workflows/codeql.yml)
 - [![Dependency Review](https://github.com/nitsuah/gcp/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/nitsuah/gcp/actions/workflows/dependency-review.yml)
+- [![Python CI](https://github.com/nitsuah/gcp/actions/workflows/python-ci.yml/badge.svg)](https://github.com/nitsuah/gcp/actions/workflows/python-ci.yml)
+
 ## Community Standards
 
 Shared community policies are centralized in https://github.com/nitsuah/.github:
