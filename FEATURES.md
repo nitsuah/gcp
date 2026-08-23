@@ -2,6 +2,14 @@
 
 ## Core Capabilities
 
+### GCP Project Provisioning (`gcp/gcp_setup.py`)
+
+- `[shipped]` **Automated GCP project creation**: generates an RFC-compliant project ID, creates the project, and links a billing account via `gcloud` CLI
+- `[shipped]` **API enablement**: enables Gmail, Calendar, Drive, Gemini, and Billing Budgets APIs in a single step
+- `[shipped]` **Budget alerts**: creates a $50/month budget with 50 % and 90 % threshold notifications
+- `[shipped]` **OAuth client provisioning**: attempts automated creation of an OAuth 2.0 web application client via `gcloud alpha`; on failure prints step-by-step manual Console instructions and writes a placeholder `apps/client_secrets.json`
+- `[shipped]` **Sensitive value redaction**: specific flagged parameters (billing account IDs and named project ID flags) are redacted from error logs; raw positional arguments are still logged
+
 ### Authentication & Authorization
 
 - OAuth2 authentication flow using Google OAuth 2.0 with local server callback
