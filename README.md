@@ -152,6 +152,11 @@ What it does:
    step-by-step manual Console instructions if the account type does not support it
 6. Writes `apps/client_secrets.json` (or a placeholder) for use by the Drive CLI
 
+> **Note:** Automated OAuth client creation is not supported on all account types. If it fails,
+> the script prints manual Console instructions and writes a placeholder `apps/client_secrets.json`
+> containing values like `YOUR_CLIENT_ID` and `YOUR_CLIENT_SECRET` that **must be replaced**
+> with real credentials from the Google Cloud Console before running `drive-copy`.
+
 **Prerequisites:** [gcloud CLI](https://cloud.google.com/sdk/docs/install) on `PATH` and
 an active GCP billing account.
 
