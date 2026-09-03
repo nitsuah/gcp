@@ -51,6 +51,12 @@ MIME_ALIASES = {
 
 # Directories and filenames
 OUTPUTS_DIRECTORY = "./outputs/"
+DUPLICATE_REPORT_PATH = "./outputs/duplicate-report.csv"
+
+# Permission roles that are never mirrored: ownership cannot be transferred by
+# granting a permission (Drive requires a separate ownership-transfer flow), so
+# mirroring an "owner" role onto the destination file/folder would just fail.
+NON_MIRRORABLE_ROLES = {"owner"}
 
 # Log format used when initializing the file handler in main()
 LOG_FILE_FORMAT = (
@@ -234,9 +240,74 @@ def _dest_has_folder(svc, dest_folder_id, folder_name):
     return files[0]["id"] if files else None
 
 
-def _copy_file_with_backoff(svc, file, dest_folder_id, max_retries, max_backoff):
+def _copy_permissions(svc, src_id, dest_id):
+    """
+    Copy sharing/ACL permissions from src_id (file or folder) onto dest_id.
+
+    Ownership ("owner" role) is never mirrored -- Drive requires a separate
+    ownership-transfer flow, and the destination owner is whoever authenticated
+    the copy. Individual permission failures (e.g. a domain permission that
+    does not exist in the destination's organization) are logged and skipped
+    rather than aborting the whole copy.
+    """
+    try:
+        results = (
+            svc.permissions()
+            .list(
+                fileId=src_id,
+                fields="permissions(id,role,type,emailAddress,domain,allowFileDiscovery)",
+            )
+            .execute()
+        )
+    except HttpError as err:
+        logging.error("Failed to list permissions for %s: %s", src_id, err)
+        return
+
+    for perm in results.get("permissions", []):
+        role = perm.get("role")
+        perm_type = perm.get("type")
+        if role in NON_MIRRORABLE_ROLES:
+            continue
+
+        body = {"role": role, "type": perm_type}
+        if perm_type in ("user", "group") and perm.get("emailAddress"):
+            body["emailAddress"] = perm["emailAddress"]
+        elif perm_type == "domain" and perm.get("domain"):
+            body["domain"] = perm["domain"]
+        elif perm_type == "anyone":
+            if "allowFileDiscovery" in perm:
+                body["allowFileDiscovery"] = perm["allowFileDiscovery"]
+        else:
+            # Missing the identifying field this permission type requires
+            # (e.g. a "user" entry with no emailAddress) -- skip rather than
+            # send a request Drive will reject.
+            continue
+
+        try:
+            svc.permissions().create(
+                fileId=dest_id,
+                body=body,
+                sendNotificationEmail=False,
+                fields="id",
+            ).execute()
+        except HttpError as err:
+            logging.error(
+                "Failed to mirror permission (role=%s type=%s) onto %s: %s",
+                role,
+                perm_type,
+                dest_id,
+                err,
+            )
+
+
+def _copy_file_with_backoff(
+    svc, file, dest_folder_id, max_retries, max_backoff, mirror_permissions=False
+):
     """
     Copy a single file with exponential backoff for transient and rate-limit errors.
+
+    When mirror_permissions is True, sharing/ACL permissions are copied from the
+    source file onto the newly created destination file after a successful copy.
 
     Returns True on success, False if all retries are exhausted.
     """
@@ -244,7 +315,13 @@ def _copy_file_with_backoff(svc, file, dest_folder_id, max_retries, max_backoff)
     delay = 1.0
     for attempt in range(max_retries):
         try:
-            svc.files().copy(fileId=file["id"], body=file_metadata).execute()
+            new_file = (
+                svc.files()
+                .copy(fileId=file["id"], body=file_metadata, fields="id")
+                .execute()
+            )
+            if mirror_permissions:
+                _copy_permissions(svc, file["id"], new_file["id"])
             return True
         except HttpError as err:
             is_rate_limit = err.resp.status in (429, 503)
@@ -328,6 +405,7 @@ def copy_child_objects(
     include_mime=None,
     exclude_mime=None,
     skip_existing=False,
+    mirror_permissions=False,
     progress_tracker=None,
     progress_log_every=DEFAULT_PROGRESS_LOG_EVERY,
 ):
@@ -344,6 +422,9 @@ def copy_child_objects(
         include_mime (list): If set, only copy files whose MIME type matches a pattern.
         exclude_mime (list): If set, skip files whose MIME type matches a pattern.
         skip_existing (bool): If True, skip files/folders already present in destination.
+        mirror_permissions (bool): If True, copy sharing/ACL permissions from each source
+            file/folder onto its newly created destination counterpart (applies only to
+            objects copied/created during this run, not ones reused via skip_existing).
     """
     svc = drive_service or service
     root_call = progress_tracker is None
@@ -377,7 +458,7 @@ def copy_child_objects(
 
     def _copy_one(file):
         success = _copy_file_with_backoff(
-            svc, file, dest_folder_id, max_retries, max_backoff
+            svc, file, dest_folder_id, max_retries, max_backoff, mirror_permissions
         )
         return file, success
 
@@ -398,7 +479,7 @@ def copy_child_objects(
     else:
         for file in files_to_copy:
             success = _copy_file_with_backoff(
-                svc, file, dest_folder_id, max_retries, max_backoff
+                svc, file, dest_folder_id, max_retries, max_backoff, mirror_permissions
             )
             if success:
                 tracker["copied_files"] += 1
@@ -429,6 +510,8 @@ def copy_child_objects(
             new_folder = svc.files().create(body=new_folder_metadata, fields="id").execute()
             child_dest_id = new_folder["id"]
             tracker["created_folders"] += 1
+            if mirror_permissions:
+                _copy_permissions(svc, folder["id"], child_dest_id)
         tracker["processed_since_log"] += 1
         _log_progress_if_needed(tracker)
         copy_child_objects(
@@ -441,6 +524,7 @@ def copy_child_objects(
             include_mime=include_mime,
             exclude_mime=exclude_mime,
             skip_existing=skip_existing,
+            mirror_permissions=mirror_permissions,
             progress_tracker=tracker,
             progress_log_every=progress_log_every,
         )
@@ -505,6 +589,112 @@ def add_child_folders(folder_id, writer, drive_service=None):
 
 # Enable pylint for no-member again
 # pylint: enable=no-member
+
+
+# pylint: disable=no-member
+def _list_files_recursive(folder_id, drive_service=None, path_prefix=""):
+    """
+    Recursively list every non-folder file under folder_id.
+
+    Returns a list of dicts: {"name", "size", "mimeType", "path"}. "size" is the
+    string byte-size Drive reports for binary files/uploads; Google-native files
+    (Docs, Sheets, Slides, Forms, Drawings) have no size and are reported as None
+    since they have no meaningful byte size to compare for duplicate detection.
+    """
+    svc = drive_service or service
+    query = f"'{folder_id}' in parents and trashed = false"
+    results = (
+        svc.files()
+        .list(q=query, fields="files(id,name,mimeType,size)")
+        .execute()
+    )
+    items = results.get("files", [])
+
+    files = []
+    for item in items:
+        item_path = f"{path_prefix}{item.get('name', '')}"
+        if item.get("mimeType") == MIME_FOLDER:
+            files.extend(
+                _list_files_recursive(item["id"], svc, path_prefix=f"{item_path}/")
+            )
+        else:
+            files.append(
+                {
+                    "name": item.get("name"),
+                    "size": item.get("size"),
+                    "mimeType": item.get("mimeType"),
+                    "path": item_path,
+                }
+            )
+    return files
+
+
+# pylint: enable=no-member
+
+
+def find_duplicate_files(src_folder_id, dest_folder_id, drive_service=None):
+    """
+    Find files with an identical name and byte size present in both the source
+    and destination folder trees.
+
+    Google-native files (Docs, Sheets, Slides, ...) have no byte size and are
+    excluded from comparison -- matching on name alone would produce false
+    positives for any two documents that happen to share a name.
+
+    Returns a list of dicts sorted by name: {"name", "size", "source_path",
+    "destination_path"}. A source file matching multiple destination files
+    (or vice versa) produces one row per matching pair.
+    """
+    svc = drive_service or service
+    src_files = _list_files_recursive(src_folder_id, svc)
+    dest_files = _list_files_recursive(dest_folder_id, svc)
+
+    dest_index = {}
+    for dest_file in dest_files:
+        if not dest_file["size"]:
+            continue
+        key = (dest_file["name"], dest_file["size"])
+        dest_index.setdefault(key, []).append(dest_file)
+
+    duplicates = []
+    for src_file in src_files:
+        if not src_file["size"]:
+            continue
+        key = (src_file["name"], src_file["size"])
+        for match in dest_index.get(key, []):
+            duplicates.append(
+                {
+                    "name": src_file["name"],
+                    "size": src_file["size"],
+                    "source_path": src_file["path"],
+                    "destination_path": match["path"],
+                }
+            )
+
+    duplicates.sort(key=lambda d: (d["name"], d["source_path"]))
+    return duplicates
+
+
+def write_duplicate_report(duplicates, csv_path=DUPLICATE_REPORT_PATH):
+    """
+    Write a duplicate-detection report to csv_path.
+
+    Args:
+        duplicates (list): Rows from find_duplicate_files().
+        csv_path (str): Destination CSV file path.
+
+    Returns:
+        str: The csv_path that was written.
+    """
+    os.makedirs(os.path.dirname(csv_path) or ".", exist_ok=True)
+    with open(csv_path, "w", newline="", encoding="utf-8") as output_file:
+        writer = csv.writer(output_file)
+        writer.writerow(["File Name", "Size (bytes)", "Source Path", "Destination Path"])
+        for dup in duplicates:
+            writer.writerow(
+                [dup["name"], dup["size"], dup["source_path"], dup["destination_path"]]
+            )
+    return csv_path
 
 
 # Compare the two assessments CSV files
@@ -591,6 +781,25 @@ def main(argv=None):
             "(enables safe re-runs after partial failures)."
         ),
     )
+    parser.add_argument(
+        "--mirror-permissions",
+        action="store_true",
+        help=(
+            "Copy sharing/ACL permissions from each source file and folder onto its "
+            "destination counterpart as it is copied/created (ownership is never "
+            "transferred). Requires the drive scope's write access to permissions."
+        ),
+    )
+    parser.add_argument(
+        "--duplicate-report",
+        action="store_true",
+        help=(
+            "Scan the source and destination folders for files with identical name "
+            f"and size, write {DUPLICATE_REPORT_PATH}, then exit without copying. "
+            "Can be run before a copy (to spot pre-existing overlap) or after one "
+            "(to spot redundant copies)."
+        ),
+    )
     args, _ = parser.parse_known_args(argv)
 
     if args.help_env:
@@ -668,6 +877,24 @@ def main(argv=None):
     )
     # pylint: enable=no-member
 
+    if args.duplicate_report:
+        print(
+            f"Scanning for duplicate files between '{source_folder_name['name']}'"
+            f" and '{destination_folder_name['name']}'..."
+        )
+        duplicates = find_duplicate_files(source_folder_id, destination_folder_id, service)
+        report_path = write_duplicate_report(duplicates)
+        print(
+            f"Duplicate report written to {report_path}"
+            f" ({len(duplicates)} matching file(s) found)."
+        )
+        logging.info(
+            "DUPLICATE REPORT: %d matching file(s) written to %s",
+            len(duplicates),
+            report_path,
+        )
+        return
+
     total_num_files, total_num_folders = count_child_objects(
         source_folder_id, service, include_mime=include_mime, exclude_mime=exclude_mime
     )
@@ -691,6 +918,8 @@ def main(argv=None):
         )
         if args.workers > 1:
             print(f"Parallel copy enabled: {args.workers} workers")
+        if args.mirror_permissions:
+            print("Permission mirroring enabled: ACL/sharing settings will be copied")
         logging.info(
             "DRY RUN: source=%s destination=%s files=%d folders=%d",
             source_folder_name["name"],
@@ -709,6 +938,8 @@ def main(argv=None):
         logging.info("Parallel copy: %d workers", args.workers)
     if args.skip_existing:
         logging.info("Skip-existing mode: files/folders already in destination will be skipped")
+    if args.mirror_permissions:
+        logging.info("Mirror-permissions mode: source ACL/sharing settings will be copied to destination")
 
     # ASSESSMENT 1 - Write the results to a CSV file
     csv_file = "./outputs/assessment-1.csv"
@@ -743,6 +974,7 @@ def main(argv=None):
         include_mime=include_mime,
         exclude_mime=exclude_mime,
         skip_existing=args.skip_existing,
+        mirror_permissions=args.mirror_permissions,
     )
     logging.info("COPY COMPLETED!")
 
