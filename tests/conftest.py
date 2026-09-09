@@ -1,13 +1,14 @@
 """Shared pytest fixtures for the gcp test suite."""
 
 import os
+from typing import Callable, ContextManager
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 
 @pytest.fixture
-def drive_env():
+def drive_env() -> Callable[..., ContextManager[None]]:
     """Return a factory for the Google Drive CLI env-var patch context.
 
     Several CLI-mode tests across test_q3_features.py and test_roadmap_2026.py
@@ -16,7 +17,9 @@ def drive_env():
     blocks pylint flags as duplicate-code (R0801).
     """
 
-    def _drive_env(source="src", dest="dst", client_id_file="fake.json"):
+    def _drive_env(
+        source: str = "src", dest: str = "dst", client_id_file: str = "fake.json"
+    ) -> ContextManager[None]:
         return patch.dict(
             os.environ,
             {
@@ -30,7 +33,7 @@ def drive_env():
 
 
 @pytest.fixture
-def mock_auth_and_service():
+def mock_auth_and_service() -> Callable[..., MagicMock]:
     """Return a factory that wires up the common authenticate+create-service mock pair.
 
     Many CLI dry-run tests mock authenticate_and_authorize() as valid and stub
@@ -39,7 +42,9 @@ def mock_auth_and_service():
     blocks pylint flags as duplicate-code (R0801).
     """
 
-    def _setup(mock_svc, mock_auth, folder_name="Folder"):
+    def _setup(
+        mock_svc: MagicMock, mock_auth: MagicMock, folder_name: str = "Folder"
+    ) -> MagicMock:
         mock_auth.return_value = Mock(valid=True)
         svc = MagicMock()
         mock_svc.return_value = svc
