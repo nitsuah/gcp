@@ -7,7 +7,7 @@ import csv
 import datetime
 import logging
 import os
-import random
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -15,6 +15,8 @@ import pandas as pd
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError  # pylint: disable=ungrouped-imports
+
+from gcp.retry import call_with_rate_limit_retry, retry_log_and_sleep
 
 # Define API scopes
 SCOPES = [
@@ -240,7 +242,9 @@ def _dest_has_folder(svc, dest_folder_id, folder_name):
     return files[0]["id"] if files else None
 
 
-def _copy_permissions(svc, src_id, dest_id):
+def _copy_permissions(
+    svc, src_id: str, dest_id: str, max_retries: int = 3, max_backoff: float = DEFAULT_MAX_BACKOFF
+) -> None:
     """
     Copy sharing/ACL permissions from src_id (file or folder) onto dest_id.
 
@@ -248,22 +252,32 @@ def _copy_permissions(svc, src_id, dest_id):
     ownership-transfer flow, and the destination owner is whoever authenticated
     the copy. Individual permission failures (e.g. a domain permission that
     does not exist in the destination's organization) are logged and skipped
-    rather than aborting the whole copy.
+    rather than aborting the whole copy. A rate-limited list/create is retried
+    with backoff first; only a failure that survives retries is skipped.
     """
-    try:
-        results = (
-            svc.permissions()
-            .list(
-                fileId=src_id,
-                fields="permissions(id,role,type,emailAddress,domain,allowFileDiscovery)",
+    permissions = []
+    page_token = None
+    while True:
+        try:
+            results = call_with_rate_limit_retry(
+                lambda pt=page_token: svc.permissions().list(
+                    fileId=src_id,
+                    fields="nextPageToken,permissions(id,role,type,emailAddress,domain,"
+                    "allowFileDiscovery,expirationTime)",
+                    pageToken=pt,
+                ),
+                max_retries=max_retries,
+                max_backoff=max_backoff,
             )
-            .execute()
-        )
-    except HttpError as err:
-        logging.error("Failed to list permissions for %s: %s", src_id, err)
-        return
+        except HttpError as err:
+            logging.exception("Failed to list permissions for %s: %s", src_id, err)
+            return
+        permissions.extend(results.get("permissions", []))
+        page_token = results.get("nextPageToken")
+        if not page_token:
+            break
 
-    for perm in results.get("permissions", []):
+    for perm in permissions:
         role = perm.get("role")
         perm_type = perm.get("type")
         if role in NON_MIRRORABLE_ROLES:
@@ -283,15 +297,29 @@ def _copy_permissions(svc, src_id, dest_id):
             # send a request Drive will reject.
             continue
 
+        if perm.get("expirationTime") and perm_type in ("user", "group"):
+            # expirationTime is only valid to set for user/group grants, and
+            # only future timestamps -- Drive rejects a past expirationTime,
+            # so a permission that already lapsed on the source is mirrored
+            # without one rather than sent as a guaranteed-invalid request.
+            expiry = perm["expirationTime"]
+            if expiry > datetime.datetime.now(datetime.timezone.utc).isoformat():
+                body["expirationTime"] = expiry
+
+        create_kwargs = {"fileId": dest_id, "body": body, "fields": "id"}
+        if perm_type in ("user", "group"):
+            # sendNotificationEmail is only accepted for user/group grants;
+            # Drive rejects the request if it's present for domain/anyone.
+            create_kwargs["sendNotificationEmail"] = False
+
         try:
-            svc.permissions().create(
-                fileId=dest_id,
-                body=body,
-                sendNotificationEmail=False,
-                fields="id",
-            ).execute()
+            call_with_rate_limit_retry(
+                lambda kwargs=create_kwargs: svc.permissions().create(**kwargs),
+                max_retries=max_retries,
+                max_backoff=max_backoff,
+            )
         except HttpError as err:
-            logging.error(
+            logging.exception(
                 "Failed to mirror permission (role=%s type=%s) onto %s: %s",
                 role,
                 perm_type,
@@ -301,8 +329,13 @@ def _copy_permissions(svc, src_id, dest_id):
 
 
 def _copy_file_with_backoff(
-    svc, file, dest_folder_id, max_retries, max_backoff, mirror_permissions=False
-):
+    svc,
+    file: dict,
+    dest_folder_id: str,
+    max_retries: int,
+    max_backoff: float,
+    mirror_permissions: bool = False,
+) -> bool:
     """
     Copy a single file with exponential backoff for transient and rate-limit errors.
 
@@ -321,24 +354,23 @@ def _copy_file_with_backoff(
                 .execute()
             )
             if mirror_permissions:
-                _copy_permissions(svc, file["id"], new_file["id"])
+                _copy_permissions(
+                    svc, file["id"], new_file["id"], max_retries=max_retries, max_backoff=max_backoff
+                )
             return True
         except HttpError as err:
             is_rate_limit = err.resp.status in (429, 503)
             if attempt < max_retries - 1:
-                sleep_time = min(delay + random.uniform(0, 1), max_backoff)
                 log_level = logging.WARNING if is_rate_limit else logging.ERROR
-                logging.log(
+                delay = retry_log_and_sleep(
                     log_level,
-                    "Error copying %s (attempt %d/%d, retry in %.1fs): %s",
-                    file["name"],
-                    attempt + 1,
+                    f"Error copying {file['name']}",
+                    attempt,
                     max_retries,
-                    sleep_time,
                     err,
+                    delay,
+                    max_backoff,
                 )
-                time.sleep(sleep_time)
-                delay = min(delay * 2, max_backoff)
             else:
                 logging.error(
                     "Error copying file %s after %d retries: %s",
@@ -395,20 +427,20 @@ def _log_progress_summary(progress_tracker):
 
 # Define a function to copy child objects recursively
 def copy_child_objects(
-    src_folder_id,
-    dest_folder_id,
+    src_folder_id: str,
+    dest_folder_id: str,
     drive_service=None,
     *,
-    max_retries=1,
-    max_backoff=DEFAULT_MAX_BACKOFF,
-    workers=DEFAULT_WORKERS,
-    include_mime=None,
-    exclude_mime=None,
-    skip_existing=False,
-    mirror_permissions=False,
-    progress_tracker=None,
-    progress_log_every=DEFAULT_PROGRESS_LOG_EVERY,
-):
+    max_retries: int = 1,
+    max_backoff: float = DEFAULT_MAX_BACKOFF,
+    workers: int = DEFAULT_WORKERS,
+    include_mime: list | None = None,
+    exclude_mime: list | None = None,
+    skip_existing: bool = False,
+    mirror_permissions: bool = False,
+    progress_tracker: dict | None = None,
+    progress_log_every: int = DEFAULT_PROGRESS_LOG_EVERY,
+) -> None:
     """
     Copies all child objects (files and folders) from source folder to a destination folder.
 
@@ -511,7 +543,9 @@ def copy_child_objects(
             child_dest_id = new_folder["id"]
             tracker["created_folders"] += 1
             if mirror_permissions:
-                _copy_permissions(svc, folder["id"], child_dest_id)
+                _copy_permissions(
+                    svc, folder["id"], child_dest_id, max_retries=max_retries, max_backoff=max_backoff
+                )
         tracker["processed_since_log"] += 1
         _log_progress_if_needed(tracker)
         copy_child_objects(
@@ -592,7 +626,7 @@ def add_child_folders(folder_id, writer, drive_service=None):
 
 
 # pylint: disable=no-member
-def _list_files_recursive(folder_id, drive_service=None, path_prefix=""):
+def _list_files_recursive(folder_id: str, drive_service=None, path_prefix: str = "") -> list:
     """
     Recursively list every non-folder file under folder_id.
 
@@ -603,12 +637,22 @@ def _list_files_recursive(folder_id, drive_service=None, path_prefix=""):
     """
     svc = drive_service or service
     query = f"'{folder_id}' in parents and trashed = false"
-    results = (
-        svc.files()
-        .list(q=query, fields="files(id,name,mimeType,size)")
-        .execute()
-    )
-    items = results.get("files", [])
+    items = []
+    page_token = None
+    while True:
+        results = (
+            svc.files()
+            .list(
+                q=query,
+                fields="nextPageToken,files(id,name,mimeType,size)",
+                pageToken=page_token,
+            )
+            .execute()
+        )
+        items.extend(results.get("files", []))
+        page_token = results.get("nextPageToken")
+        if not page_token:
+            break
 
     files = []
     for item in items:
@@ -675,6 +719,21 @@ def find_duplicate_files(src_folder_id, dest_folder_id, drive_service=None):
     return duplicates
 
 
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def _csv_safe(value: str) -> str:
+    """
+    Prefix a value with a leading apostrophe if it starts with a character
+    spreadsheet software (Excel, Sheets) interprets as a formula trigger, so
+    a Drive file/folder name a source-folder collaborator controls can't
+    execute as a formula when the report is opened (CSV injection, CWE-1236).
+    """
+    if value and value[0] in _CSV_FORMULA_PREFIXES:
+        return f"'{value}"
+    return value
+
+
 def write_duplicate_report(duplicates, csv_path=DUPLICATE_REPORT_PATH):
     """
     Write a duplicate-detection report to csv_path.
@@ -692,7 +751,12 @@ def write_duplicate_report(duplicates, csv_path=DUPLICATE_REPORT_PATH):
         writer.writerow(["File Name", "Size (bytes)", "Source Path", "Destination Path"])
         for dup in duplicates:
             writer.writerow(
-                [dup["name"], dup["size"], dup["source_path"], dup["destination_path"]]
+                [
+                    _csv_safe(dup["name"]),
+                    dup["size"],
+                    _csv_safe(dup["source_path"]),
+                    _csv_safe(dup["destination_path"]),
+                ]
             )
     return csv_path
 
@@ -882,7 +946,12 @@ def main(argv=None):
             f"Scanning for duplicate files between '{source_folder_name['name']}'"
             f" and '{destination_folder_name['name']}'..."
         )
-        duplicates = find_duplicate_files(source_folder_id, destination_folder_id, service)
+        try:
+            duplicates = find_duplicate_files(source_folder_id, destination_folder_id, service)
+        except HttpError as err:
+            logging.exception("Duplicate scan failed: %s", err)
+            print(f"ERROR: duplicate scan failed: {err}")
+            sys.exit(1)
         report_path = write_duplicate_report(duplicates)
         print(
             f"Duplicate report written to {report_path}"

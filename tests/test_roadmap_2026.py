@@ -217,7 +217,11 @@ class TestCopyPermissions:
         mock_service.permissions().create.assert_not_called()
 
     def test_domain_permission_is_mirrored(self, mock_service):
-        """Test that a 'domain' type permission carries the domain field."""
+        """
+        Test that a 'domain' type permission carries the domain field and
+        omits sendNotificationEmail (Drive only accepts that param for
+        user/group grants -- see PR #59 review).
+        """
         mock_service.permissions().list().execute.return_value = {
             "permissions": [
                 {"id": "p1", "role": "reader", "type": "domain", "domain": "example.com"}
@@ -226,6 +230,7 @@ class TestCopyPermissions:
         _copy_permissions(mock_service, "src_id", "dest_id")
         _, kwargs = mock_service.permissions().create.call_args
         assert kwargs["body"] == {"role": "reader", "type": "domain", "domain": "example.com"}
+        assert "sendNotificationEmail" not in kwargs
 
     def test_anyone_permission_is_mirrored(self, mock_service):
         """Test that an 'anyone' type permission carries allowFileDiscovery."""
@@ -287,7 +292,9 @@ class TestCopyFileWithBackoffMirrorsPermissions:
             )
 
         assert result is True
-        mock_mirror.assert_called_once_with(mock_service, "src_file_id", "new_file_id")
+        mock_mirror.assert_called_once_with(
+            mock_service, "src_file_id", "new_file_id", max_retries=1, max_backoff=10
+        )
 
     def test_mirror_permissions_not_called_by_default(self, mock_service):
         """Test that permissions are not mirrored unless explicitly requested."""
@@ -344,8 +351,12 @@ class TestCopyChildObjectsMirrorPermissions:
         with patch("gcp.copy_folder._copy_permissions") as mock_mirror:
             copy_child_objects("src", "dest", mock_service, mirror_permissions=True)
 
-        mock_mirror.assert_any_call(mock_service, "f1", "new_file")
-        mock_mirror.assert_any_call(mock_service, "sub", "new_folder")
+        mock_mirror.assert_any_call(
+            mock_service, "f1", "new_file", max_retries=1, max_backoff=60.0
+        )
+        mock_mirror.assert_any_call(
+            mock_service, "sub", "new_folder", max_retries=1, max_backoff=60.0
+        )
         assert mock_mirror.call_count == 2
 
     def test_no_mirroring_when_disabled(self, mock_service):
