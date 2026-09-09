@@ -396,7 +396,7 @@ class TestCLIDuplicateReport:
     @patch("gcp.copy_folder.count_child_objects")
     @patch("gcp.copy_folder.copy_child_objects")
     def test_duplicate_report_mode_skips_copy(
-        self, mock_copy, mock_count, mock_write, mock_find, mock_create_service, mock_auth
+        self, mock_copy, mock_count, mock_write, mock_find, mock_create_service, mock_auth, drive_env
     ):
         """Test that --duplicate-report writes the report and returns without copying."""
         mock_auth.return_value = Mock(valid=True)
@@ -406,14 +406,7 @@ class TestCLIDuplicateReport:
         mock_find.return_value = [{"name": "a.pdf", "size": "10", "source_path": "a.pdf", "destination_path": "a.pdf"}]
         mock_write.return_value = "./outputs/duplicate-report.csv"
 
-        with patch.dict(
-            os.environ,
-            {
-                "GOOGLE_DRIVE_CLIENT_ID_FILE": "fake.json",
-                "GOOGLE_DRIVE_SOURCE_FOLDER_ID": "src123",
-                "GOOGLE_DRIVE_DESTINATION_FOLDER_ID": "dst456",
-            },
-        ):
+        with drive_env(source="src123", dest="dst456"):
             main(["--duplicate-report"])
 
         mock_find.assert_called_once_with("src123", "dst456", svc)
@@ -426,7 +419,7 @@ class TestCLIDuplicateReport:
     @patch("gcp.copy_folder.find_duplicate_files")
     @patch("gcp.copy_folder.write_duplicate_report")
     def test_duplicate_report_prints_summary(
-        self, mock_write, mock_find, mock_create_service, mock_auth, capsys
+        self, mock_write, mock_find, mock_create_service, mock_auth, capsys, drive_env
     ):
         """Test that the duplicate count and report path are printed."""
         mock_auth.return_value = Mock(valid=True)
@@ -436,14 +429,7 @@ class TestCLIDuplicateReport:
         mock_find.return_value = [{"name": "a.pdf"}, {"name": "b.pdf"}]
         mock_write.return_value = "./outputs/duplicate-report.csv"
 
-        with patch.dict(
-            os.environ,
-            {
-                "GOOGLE_DRIVE_CLIENT_ID_FILE": "fake.json",
-                "GOOGLE_DRIVE_SOURCE_FOLDER_ID": "src",
-                "GOOGLE_DRIVE_DESTINATION_FOLDER_ID": "dst",
-            },
-        ):
+        with drive_env():
             main(["--duplicate-report"])
 
         out = capsys.readouterr().out
@@ -458,22 +444,12 @@ class TestCLIMirrorPermissions:
     @patch("gcp.copy_folder.create_drive_service")
     @patch("gcp.copy_folder.count_child_objects", return_value=(3, 1))
     def test_dry_run_shows_mirror_permissions_note(
-        self, _mock_count, mock_svc, mock_auth, capsys
+        self, _mock_count, mock_svc, mock_auth, capsys, drive_env, mock_auth_and_service
     ):
         """Test that --mirror-permissions is noted in dry-run output."""
-        mock_auth.return_value = Mock(valid=True)
-        svc = MagicMock()
-        mock_svc.return_value = svc
-        svc.files().get().execute.return_value = {"name": "Folder"}
+        mock_auth_and_service(mock_svc, mock_auth)
 
-        with patch.dict(
-            os.environ,
-            {
-                "GOOGLE_DRIVE_CLIENT_ID_FILE": "fake.json",
-                "GOOGLE_DRIVE_SOURCE_FOLDER_ID": "src",
-                "GOOGLE_DRIVE_DESTINATION_FOLDER_ID": "dst",
-            },
-        ):
+        with drive_env():
             main(["--dry-run", "--mirror-permissions"])
 
         out = capsys.readouterr().out
@@ -495,6 +471,7 @@ class TestCLIMirrorPermissions:
         _mock_count,
         mock_svc,
         mock_auth,
+        drive_env,
     ):
         """Test that a full (non-dry-run) invocation forwards mirror_permissions=True."""
         mock_auth.return_value = Mock(valid=True)
@@ -502,14 +479,7 @@ class TestCLIMirrorPermissions:
         mock_svc.return_value = svc
         svc.files().get().execute.side_effect = [{"name": "Source"}, {"name": "Dest"}]
 
-        with patch.dict(
-            os.environ,
-            {
-                "GOOGLE_DRIVE_CLIENT_ID_FILE": "fake.json",
-                "GOOGLE_DRIVE_SOURCE_FOLDER_ID": "src",
-                "GOOGLE_DRIVE_DESTINATION_FOLDER_ID": "dst",
-            },
-        ):
+        with drive_env():
             main(["--mirror-permissions"])
 
         assert mock_copy.call_count == 1
