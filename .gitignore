@@ -9,6 +9,11 @@ __pycache__/
 .vscode/
 agent/
 
+## Node (apps/ boilerplate)
+node_modules/
+apps/client_secrets.json
+apps/data/
+
 
 ## EGG INFO
 *.egg-info/

@@ -2,7 +2,6 @@
 
 # pylint: disable=redefined-outer-name,import-outside-toplevel
 import logging
-import os
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -458,22 +457,12 @@ class TestCLIArgs:
     @patch("gcp.copy_folder.create_drive_service")
     @patch("gcp.copy_folder.count_child_objects", return_value=(5, 2))
     def test_dry_run_with_include_mime(
-        self, _mock_count, mock_svc, mock_auth, capsys
+        self, _mock_count, mock_svc, mock_auth, capsys, drive_env, mock_auth_and_service
     ):
         """Test that --include-mime is shown in dry-run output."""
-        mock_auth.return_value = Mock(valid=True)
-        svc = MagicMock()
-        mock_svc.return_value = svc
-        svc.files().get().execute.return_value = {"name": "MyFolder"}
+        mock_auth_and_service(mock_svc, mock_auth, folder_name="MyFolder")
 
-        with patch.dict(
-            os.environ,
-            {
-                "GOOGLE_DRIVE_CLIENT_ID_FILE": "fake.json",
-                "GOOGLE_DRIVE_SOURCE_FOLDER_ID": "src123",
-                "GOOGLE_DRIVE_DESTINATION_FOLDER_ID": "dst456",
-            },
-        ):
+        with drive_env(source="src123", dest="dst456"):
             main(["--dry-run", "--include-mime", "docs,pdf"])
 
         out = capsys.readouterr().out
@@ -484,22 +473,12 @@ class TestCLIArgs:
     @patch("gcp.copy_folder.create_drive_service")
     @patch("gcp.copy_folder.count_child_objects", return_value=(3, 1))
     def test_dry_run_with_workers_shows_parallel_note(
-        self, _mock_count, mock_svc, mock_auth, capsys
+        self, _mock_count, mock_svc, mock_auth, capsys, drive_env, mock_auth_and_service
     ):
         """Test that --workers > 1 prints a parallel-copy note in dry-run output."""
-        mock_auth.return_value = Mock(valid=True)
-        svc = MagicMock()
-        mock_svc.return_value = svc
-        svc.files().get().execute.return_value = {"name": "Folder"}
+        mock_auth_and_service(mock_svc, mock_auth)
 
-        with patch.dict(
-            os.environ,
-            {
-                "GOOGLE_DRIVE_CLIENT_ID_FILE": "fake.json",
-                "GOOGLE_DRIVE_SOURCE_FOLDER_ID": "src",
-                "GOOGLE_DRIVE_DESTINATION_FOLDER_ID": "dst",
-            },
-        ):
+        with drive_env():
             main(["--dry-run", "--workers", "4"])
 
         out = capsys.readouterr().out
@@ -509,22 +488,12 @@ class TestCLIArgs:
     @patch("gcp.copy_folder.create_drive_service")
     @patch("gcp.copy_folder.count_child_objects", return_value=(2, 0))
     def test_dry_run_with_skip_existing_flag(
-        self, _mock_count, mock_svc, mock_auth, capsys
+        self, _mock_count, mock_svc, mock_auth, capsys, drive_env, mock_auth_and_service
     ):
         """Test that --skip-existing is accepted without error in dry-run."""
-        mock_auth.return_value = Mock(valid=True)
-        svc = MagicMock()
-        mock_svc.return_value = svc
-        svc.files().get().execute.return_value = {"name": "Folder"}
+        mock_auth_and_service(mock_svc, mock_auth)
 
-        with patch.dict(
-            os.environ,
-            {
-                "GOOGLE_DRIVE_CLIENT_ID_FILE": "fake.json",
-                "GOOGLE_DRIVE_SOURCE_FOLDER_ID": "src",
-                "GOOGLE_DRIVE_DESTINATION_FOLDER_ID": "dst",
-            },
-        ):
+        with drive_env():
             main(["--dry-run", "--skip-existing"])
 
         out = capsys.readouterr().out

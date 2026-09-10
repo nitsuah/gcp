@@ -42,6 +42,9 @@ drive-copy --help
 - `https://www.googleapis.com/auth/drive`
 - `https://www.googleapis.com/auth/drive.metadata.readonly`
 
+The full `drive` scope already covers reading and writing file permissions, so
+`--mirror-permissions` needs no additional scope or re-authorization.
+
 ## Configuration
 
 Set the following environment variables:
@@ -92,6 +95,14 @@ drive-copy --max-retries 5 --max-backoff 120
 # Re-run safely after a partial failure — already-copied files and folders are skipped
 drive-copy --skip-existing
 
+# Copy ACL/sharing permissions from source files/folders onto their destination counterparts
+# (ownership is never transferred; applies only to objects copied/created during this run)
+drive-copy --mirror-permissions
+
+# Scan source and destination for files with identical name+size and write
+# outputs/duplicate-report.csv, then exit without copying (run before or after a copy)
+drive-copy --duplicate-report
+
 # Copy mode logs periodic COPY PROGRESS updates and a final COPY PROGRESS SUMMARY
 drive-copy
 
@@ -131,6 +142,12 @@ Documentation,28,5
 
 ### JSON Format
 See `examples/report-sample.json` for complete structure.
+
+Duplicate report (`outputs/duplicate-report.csv`, written by `--duplicate-report`):
+```csv
+File Name,Size (bytes),Source Path,Destination Path
+report.pdf,102400,Design/report.pdf,Design/report.pdf
+```
 
 ## GCP Project Setup Utility
 
