@@ -46,5 +46,5 @@ jobs:
 
     - name: Run pip-audit security scan
       run: |
-        pip install pip-audit
+        pip install pip-audit==2.10.1
         pip-audit -r requirements.txt
