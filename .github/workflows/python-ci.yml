@@ -39,3 +39,12 @@ jobs:
     - name: Run bandit security scan
       run: |
         bandit -r gcp/ -ll
+
+    - name: Install pinned requirements
+      run: |
+        pip install -r requirements.txt
+
+    - name: Run pip-audit security scan
+      run: |
+        pip install pip-audit==2.10.1
+        pip-audit -r requirements.txt
