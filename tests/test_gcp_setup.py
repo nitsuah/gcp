@@ -137,7 +137,7 @@ class TestHelpers:
 # ── Billing ──────────────────────────────────────────────────────────────
 
 
-BILLING = [
+MENU_ENTRIES = [
     {"displayName": "Main", "name": "billingAccounts/AAA-111"},
     {"displayName": "Side", "name": "billingAccounts/BBB-222"},
 ]
@@ -148,8 +148,8 @@ class TestListBillingAccounts:
 
     def test_parses_json(self, mock_run):
         """Valid JSON output is returned as a list of dicts."""
-        mock_run.return_value = _completed(stdout=json.dumps(BILLING))
-        assert gs.list_billing_accounts() == BILLING
+        mock_run.return_value = _completed(stdout=json.dumps(MENU_ENTRIES))
+        assert gs.list_billing_accounts() == MENU_ENTRIES
 
     def test_invalid_json_returns_empty(self, mock_run):
         """Unparseable output yields an empty list."""
@@ -158,7 +158,9 @@ class TestListBillingAccounts:
 
     def test_nonzero_returns_empty(self, mock_run):
         """A failed command yields an empty list."""
-        mock_run.return_value = _completed(returncode=1, stdout=json.dumps(BILLING))
+        mock_run.return_value = _completed(
+            returncode=1, stdout=json.dumps(MENU_ENTRIES)
+        )
         assert gs.list_billing_accounts() == []
 
 
@@ -168,7 +170,7 @@ class TestSelectBillingAccount:
     def test_numeric_choice(self, capsys):
         """A valid menu number selects that account's short ID."""
         with patch("builtins.input", return_value=" 2 "):
-            assert gs.select_billing_account(BILLING) == "BBB-222"
+            assert gs.select_billing_account(MENU_ENTRIES) == "BBB-222"
         out = capsys.readouterr().out
         assert "[1] Main  (AAA-111)" in out
         assert "[2] Side  (BBB-222)" in out
@@ -177,7 +179,7 @@ class TestSelectBillingAccount:
     def test_out_of_range_or_manual_returned_verbatim(self, choice):
         """Out-of-range numbers and free text are returned as typed."""
         with patch("builtins.input", return_value=choice):
-            assert gs.select_billing_account(BILLING) == choice
+            assert gs.select_billing_account(MENU_ENTRIES) == choice
 
     def test_missing_fields_default(self, capsys):
         """Accounts missing displayName/name fall back to defaults."""
