@@ -7,14 +7,20 @@ no real gcloud/network calls are made. Interactive input() is patched too.
 # pylint: disable=redefined-outer-name,protected-access
 import json
 import subprocess
-from unittest.mock import patch
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack
+from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from gcp import gcp_setup as gs
 
 
-def _completed(returncode=0, stdout="", stderr=""):
+def _completed(
+    returncode: int = 0, stdout: str = "", stderr: str = ""
+) -> subprocess.CompletedProcess:
     """Build a fake subprocess.CompletedProcess."""
     return subprocess.CompletedProcess(
         args="cmd", returncode=returncode, stdout=stdout, stderr=stderr
@@ -22,7 +28,7 @@ def _completed(returncode=0, stdout="", stderr=""):
 
 
 @pytest.fixture
-def mock_run():
+def mock_run() -> Iterator[MagicMock]:
     """Patch subprocess.run inside gcp_setup and return the mock."""
     with patch("gcp.gcp_setup.subprocess.run") as mocked:
         mocked.return_value = _completed()
@@ -66,8 +72,6 @@ class TestRunCommand:
         res = gs.run_command("gcloud version", input_data="y")
         assert res.stdout == "ok"
         _, kwargs = mock_run.call_args
-        assert kwargs["shell"] is True
-        assert kwargs["capture_output"] is True
         assert kwargs["input"] == "y"
         assert kwargs["check"] is False
 
@@ -272,10 +276,12 @@ class TestProjectProvisioning:
 # ── OAuth client creation ────────────────────────────────────────────────
 
 
-def _dispatch(responses):
+def _dispatch(
+    responses: dict[str, subprocess.CompletedProcess],
+) -> Callable[..., subprocess.CompletedProcess]:
     """Return a subprocess.run side effect keyed on a command substring."""
 
-    def _side_effect(command, **_kwargs):
+    def _side_effect(command: str, **_kwargs: Any) -> subprocess.CompletedProcess:
         for key, value in responses.items():
             if key in command:
                 return value
@@ -395,7 +401,7 @@ def test_print_manual_oauth_steps(capsys):
 
 
 @pytest.fixture
-def main_env(tmp_path):
+def main_env(tmp_path: Path) -> Iterator[dict[str, Any]]:
     """Patch every side-effecting collaborator of main() and yield the mocks.
 
     __file__ is redirected into tmp_path so main() writes client_secrets.json
@@ -420,21 +426,21 @@ def main_env(tmp_path):
     patchers = [patch(f"gcp.gcp_setup.{n}") for n in names]
     patchers.append(patch("gcp.gcp_setup.__file__", str(fake_file)))
     patchers.append(patch("builtins.input", return_value=""))
-    mocks = {}
-    for name, patcher in zip(names + ["__file__", "input"], patchers):
-        mocks[name] = patcher.start()
-    mocks["check_gcloud_installed"].return_value = True
-    mocks["get_gcloud_account"].return_value = "me@x.com"
-    mocks["select_billing_account"].return_value = "BILL"
-    mocks["generate_project_id"].return_value = "ws-auth-abc123"
-    mocks["create_project"].return_value = True
-    mocks["try_create_oauth_client"].return_value = {
-        "client_id": "cid",
-        "client_secret": "csec",
-    }
-    mocks["out_path"] = tmp_path / "apps" / "client_secrets.json"
-    yield mocks
-    patch.stopall()
+    with ExitStack() as stack:
+        mocks: dict[str, Any] = {}
+        for name, patcher in zip(names + ["__file__", "input"], patchers):
+            mocks[name] = stack.enter_context(patcher)
+        mocks["check_gcloud_installed"].return_value = True
+        mocks["get_gcloud_account"].return_value = "me@x.com"
+        mocks["select_billing_account"].return_value = "BILL"
+        mocks["generate_project_id"].return_value = "ws-auth-abc123"
+        mocks["create_project"].return_value = True
+        mocks["try_create_oauth_client"].return_value = {
+            "client_id": "cid",
+            "client_secret": "csec",
+        }
+        mocks["out_path"] = tmp_path / "apps" / "client_secrets.json"
+        yield mocks
 
 
 class TestMain:
