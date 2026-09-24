@@ -29,9 +29,24 @@ def _redact_sensitive_cli_args(command):
 # Both are interpolated into shell commands, so reject anything else up front.
 PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
 BILLING_ID_RE = re.compile(r"^[A-Za-z0-9-]+$")
+# GCP also refuses project IDs containing these words.
+RESTRICTED_PROJECT_ID_WORDS = ("google", "ssl")
 
 
-def run_command(command, check=True, input_data=None, interactive=False):
+def is_valid_project_id(project_id: str) -> bool:
+    """Return True if project_id is a well-formed, unrestricted GCP project ID."""
+    return bool(PROJECT_ID_RE.match(project_id)) and not any(
+        word in project_id for word in RESTRICTED_PROJECT_ID_WORDS
+    )
+
+
+def run_command(
+    command: str,
+    check: bool = True,
+    input_data: str | None = None,
+    *,
+    interactive: bool = False,
+) -> subprocess.CompletedProcess | None:
     """Run a CLI command and return the result.
 
     interactive=True leaves stdin/stdout/stderr attached to the terminal, for
@@ -314,10 +329,11 @@ def main():
     project_id = input(
         f"\nProject ID [Enter to accept '{default_id}']: "
     ).strip() or default_id
-    if not PROJECT_ID_RE.match(project_id):
+    if not is_valid_project_id(project_id):
         print(
             f"[ERROR] Invalid project ID '{project_id}': use 6-30 lowercase letters, "
-            "digits or hyphens, starting with a letter and not ending in a hyphen."
+            "digits or hyphens, starting with a letter and not ending in a hyphen "
+            "(and not containing 'google' or 'ssl')."
         )
         sys.exit(1)
 
