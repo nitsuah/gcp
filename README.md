@@ -201,6 +201,7 @@ Shared community policies are centralized in https://github.com/nitsuah/.github:
 - Security: https://github.com/nitsuah/.github/blob/main/SECURITY.md
 
 <!-- docs-index:start -->
+
 ## Docs Index
 
 Every tracked doc in this repo, so nothing is orphaned (also used by the Obsidian vault mirror).
@@ -210,4 +211,5 @@ Every tracked doc in this repo, so nothing is orphaned (also used by the Obsidia
 - [Metrics](./docs/METRICS.md) — `docs/METRICS.md`
 - [GCP Google Drive Tools Roadmap](./docs/ROADMAP.md) — `docs/ROADMAP.md`
 - [Tasks](./docs/TASKS.md) — `docs/TASKS.md`
+
 <!-- docs-index:end -->
