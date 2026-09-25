@@ -10,4 +10,4 @@ All completed work is documented in [FEATURES.md](./FEATURES.md) and [CHANGELOG.
 
 ## Todo
 
-- [ ] Evaluate lightweight web UI for credential and folder configuration (2027 Q1 exploratory, see ROADMAP.md)
+- [ ] Evaluate lightweight web UI for credential and folder configuration (2027 Q1 exploratory, see [ROADMAP.md](./ROADMAP.md))
