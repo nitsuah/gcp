@@ -75,6 +75,23 @@ class TestRunCommand:
         assert kwargs["input"] == "y"
         assert kwargs["check"] is False
 
+    def test_interactive_leaves_terminal_attached(self, mock_run: MagicMock) -> None:
+        """interactive=True must not capture output, so login prompts stay visible."""
+        gs.run_command("gcloud auth login", interactive=True)
+        _, kwargs = mock_run.call_args
+        assert "capture_output" not in kwargs
+        assert "input" not in kwargs
+
+    def test_interactive_failure_skips_captured_output(
+        self, mock_run: MagicMock, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """An interactive failure logs the command without None stdout/stderr."""
+        mock_run.return_value = _completed(returncode=1, stdout=None, stderr=None)
+        assert gs.run_command("gcloud auth login", interactive=True) is None
+        out = capsys.readouterr().out
+        assert "Command failed" in out
+        assert "stdout" not in out
+
     def test_failure_with_check_returns_none_and_redacts(self, mock_run, capsys):
         """A non-zero exit with check=True returns None and logs a redacted command."""
         mock_run.return_value = _completed(returncode=1, stdout=" o ", stderr=" e ")
@@ -483,7 +500,9 @@ class TestMain:
         """With no session, gcloud auth login is run and the account re-read."""
         main_env["get_gcloud_account"].side_effect = [None, "me@x.com"]
         gs.main()
-        main_env["run_command"].assert_called_once_with("gcloud auth login")
+        main_env["run_command"].assert_called_once_with(
+            "gcloud auth login", interactive=True
+        )
         main_env["create_project"].assert_called_once()
 
     def test_gcloud_missing_exits(self, main_env):
@@ -503,6 +522,34 @@ class TestMain:
     def test_missing_billing_exits(self, main_env):
         """An empty billing ID exits before project creation."""
         main_env["select_billing_account"].return_value = ""
+        with pytest.raises(SystemExit):
+            gs.main()
+        main_env["create_project"].assert_not_called()
+
+    @pytest.mark.parametrize("bad", ["BILL; rm -rf ~", "0123 ABCD", "$(id)"])
+    def test_invalid_billing_id_exits(self, main_env: dict[str, Any], bad: str) -> None:
+        """Billing IDs with shell metacharacters are rejected before any gcloud call."""
+        main_env["select_billing_account"].return_value = bad
+        with pytest.raises(SystemExit):
+            gs.main()
+        main_env["create_project"].assert_not_called()
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "My-Proj",
+            "abc",
+            "proj-",
+            "1project",
+            "p; rm -rf ~",
+            "a" * 31,
+            "google1",
+            "abcssl1",
+        ],
+    )
+    def test_invalid_project_id_exits(self, main_env: dict[str, Any], bad: str) -> None:
+        """Project IDs outside GCP's format are rejected before creation."""
+        main_env["input"].return_value = bad
         with pytest.raises(SystemExit):
             gs.main()
         main_env["create_project"].assert_not_called()

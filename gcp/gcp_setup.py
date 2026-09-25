@@ -24,21 +24,53 @@ def _redact_sensitive_cli_args(command):
     return redacted
 
 
-def run_command(command, check=True, input_data=None):
-    """Run a CLI command and return the result."""
+# GCP project IDs: 6-30 chars, lowercase letters/digits/hyphens, starting with a
+# letter and not ending in a hyphen. Billing IDs are hyphenated alphanumerics.
+# Both are interpolated into shell commands, so reject anything else up front.
+PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
+BILLING_ID_RE = re.compile(r"^[A-Za-z0-9-]+$")
+# GCP also refuses project IDs containing these words.
+RESTRICTED_PROJECT_ID_WORDS = ("google", "ssl")
+
+
+def is_valid_project_id(project_id: str) -> bool:
+    """Return True if project_id is a well-formed, unrestricted GCP project ID."""
+    return bool(PROJECT_ID_RE.match(project_id)) and not any(
+        word in project_id for word in RESTRICTED_PROJECT_ID_WORDS
+    )
+
+
+def run_command(
+    command: str,
+    check: bool = True,
+    input_data: str | None = None,
+    *,
+    interactive: bool = False,
+) -> subprocess.CompletedProcess | None:
+    """Run a CLI command and return the result.
+
+    interactive=True leaves stdin/stdout/stderr attached to the terminal, for
+    commands like `gcloud auth login` that print a URL and wait for a code.
+    """
     try:
-        result = subprocess.run(  # nosec B602
-            command,
-            shell=True,
-            check=False,
-            text=True,
-            capture_output=True,
-            input=input_data,
-        )
+        if interactive:
+            result = subprocess.run(  # nosec B602
+                command, shell=True, check=False, text=True
+            )
+        else:
+            result = subprocess.run(  # nosec B602
+                command,
+                shell=True,
+                check=False,
+                text=True,
+                capture_output=True,
+                input=input_data,
+            )
         if check and result.returncode != 0:
             print(f"[ERROR] Command failed: {_redact_sensitive_cli_args(command)}")
-            print(f"  stdout: {result.stdout.strip()}")
-            print(f"  stderr: {result.stderr.strip()}")
+            if not interactive:
+                print(f"  stdout: {result.stdout.strip()}")
+                print(f"  stderr: {result.stderr.strip()}")
             return None
         return result
     except Exception as exc:  # pylint: disable=broad-except
@@ -275,7 +307,7 @@ def main():
     account = get_gcloud_account()
     if not account:
         print("[INFO] No active gcloud session. Launching login…")
-        run_command("gcloud auth login")
+        run_command("gcloud auth login", interactive=True)
         account = get_gcloud_account()
         if not account:
             print("[ERROR] Authentication failed.")
@@ -288,12 +320,22 @@ def main():
     if not billing_id:
         print("[ERROR] Billing Account ID is required.")
         sys.exit(1)
+    if not BILLING_ID_RE.match(billing_id):
+        print("[ERROR] Billing Account ID may only contain letters, digits and hyphens.")
+        sys.exit(1)
 
     # ── Project ───────────────────────────────────────────────────
     default_id = generate_project_id()
     project_id = input(
         f"\nProject ID [Enter to accept '{default_id}']: "
     ).strip() or default_id
+    if not is_valid_project_id(project_id):
+        print(
+            f"[ERROR] Invalid project ID '{project_id}': use 6-30 lowercase letters, "
+            "digits or hyphens, starting with a letter and not ending in a hyphen "
+            "(and not containing 'google' or 'ssl')."
+        )
+        sys.exit(1)
 
     if not create_project(project_id):
         print("[ERROR] Project creation failed.")
