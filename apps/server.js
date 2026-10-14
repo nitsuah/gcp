@@ -16,12 +16,30 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Secure Local Token Storage Configuration
 const TOKENS_FILE = path.join(__dirname, 'data', 'tokens.json');
+// Dev-only key for demo mode (no OAuth credentials). Demo mode stores mock tokens only.
+// Never used when real OAuth credentials are configured.
+const DEMO_ENCRYPTION_SECRET = 'DEV-ONLY-demo-mode-key-do-not-use-for-real-tokens';
+const ENCRYPTION_SECRET = resolveEncryptionSecret();
 // Hash the encryption key to ensure it is exactly 32 bytes
-const ENCRYPTION_KEY = crypto
-  .createHash('sha256')
-  .update(process.env.ENCRYPTION_KEY || 'centralized-gcp-workspace-integration-key-g14f')
-  .digest();
+const ENCRYPTION_KEY = crypto.createHash('sha256').update(ENCRYPTION_SECRET).digest();
 const IV_LENGTH = 16;
+
+/**
+ * Returns the secret used to encrypt stored OAuth tokens.
+ * ENCRYPTION_KEY is required; the only exception is demo mode, which uses the dev-only key above.
+ * Exits the process with a clear message if the key is missing outside demo mode.
+ */
+function resolveEncryptionSecret() {
+  if (process.env.ENCRYPTION_KEY) return process.env.ENCRYPTION_KEY;
+  if (isDemoModeActive()) {
+    console.warn('[WARNING] ENCRYPTION_KEY not set. Using the DEV-ONLY demo key (demo mode, mock tokens only).');
+    return DEMO_ENCRYPTION_SECRET;
+  }
+  console.error('[FATAL] ENCRYPTION_KEY is required to encrypt stored OAuth refresh tokens.');
+  console.error('[FATAL] Set it in apps/.env. Generate one with:');
+  console.error(`[FATAL]   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`);
+  process.exit(1);
+}
 
 // Application State Config
 let configState = {

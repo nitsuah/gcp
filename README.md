@@ -18,6 +18,7 @@
 
 - [Login to GCP & Create project](https://console.cloud.google.com/getting-started?organizationId=0)
 - [Create Google OAuth 2.0 Client IDs](https://console.cloud.google.com/apis/credentials/consent?project=project-id)
+- Set the OAuth consent screen to **In production**: in Testing mode, stored refresh tokens expire after 7 days. Unverified is fine for personal use, though `gmail.modify` is a restricted scope.
 
 ## Installation
 
