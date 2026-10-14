@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- `apps/server.js` no longer falls back to a hard-coded token-encryption key: `ENCRYPTION_KEY` is required and the server exits at startup if it is missing (demo mode, with no OAuth credentials, uses a clearly marked dev-only key). Stored tokens encrypted with the old default must be re-authorized, or decrypted by setting `ENCRYPTION_KEY` to the old value once.
+- `apps/server.js` no longer falls back to a hard-coded token-encryption key: `ENCRYPTION_KEY` is required and the server exits at startup if it is missing (demo mode, with no OAuth credentials, uses a clearly marked dev-only key). Tokens encrypted with the old default key cannot be read with a new key, so linked accounts must be re-authorized. Demo mode now stores its mock tokens in `data/tokens.demo.json`, leaving `data/tokens.json` untouched.
 
 ### 2026-09 — Hardening & coverage
 

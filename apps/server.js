@@ -15,11 +15,14 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Secure Local Token Storage Configuration
-const TOKENS_FILE = path.join(__dirname, 'data', 'tokens.json');
+const DATA_DIR = path.join(__dirname, 'data');
 // Dev-only key for demo mode (no OAuth credentials). Demo mode stores mock tokens only.
 // Never used when real OAuth credentials are configured.
 const DEMO_ENCRYPTION_SECRET = 'DEV-ONLY-demo-mode-key-do-not-use-for-real-tokens';
+let usingDemoKey = false;
 const ENCRYPTION_SECRET = resolveEncryptionSecret();
+// Demo mode gets its own store so it can never overwrite real tokens encrypted with the real key
+const TOKENS_FILE = path.join(DATA_DIR, usingDemoKey ? 'tokens.demo.json' : 'tokens.json');
 // Hash the encryption key to ensure it is exactly 32 bytes
 const ENCRYPTION_KEY = crypto.createHash('sha256').update(ENCRYPTION_SECRET).digest();
 const IV_LENGTH = 16;
@@ -33,6 +36,7 @@ function resolveEncryptionSecret() {
   if (process.env.ENCRYPTION_KEY) return process.env.ENCRYPTION_KEY;
   if (isDemoModeActive()) {
     console.warn('[WARNING] ENCRYPTION_KEY not set. Using the DEV-ONLY demo key (demo mode, mock tokens only).');
+    usingDemoKey = true;
     return DEMO_ENCRYPTION_SECRET;
   }
   console.error('[FATAL] ENCRYPTION_KEY is required to encrypt stored OAuth refresh tokens.');
