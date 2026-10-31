@@ -17,10 +17,15 @@ import shutil
 from pathlib import Path
 
 
-def _redact_sensitive_cli_args(command):
+def _redact_sensitive_cli_args(text):
     """Redact sensitive CLI argument values before logging."""
-    redacted = re.sub(r"(--billing-account=)(\S+)", r"\1[REDACTED]", command)
+    redacted = re.sub(r"(--billing-account=)(\S+)", r"\1[REDACTED]", text)
     redacted = re.sub(r"(--filter-projects=projects/)(\S+)", r"\1[REDACTED]", redacted)
+    # Also redact client secrets and tokens if they appear in output
+    redacted = re.sub(r"(\bclient[_-]?secret\s*[:=]\s*)(\S+)", r"\1[REDACTED]", redacted, flags=re.IGNORECASE)
+    redacted = re.sub(r"(\baccess[_-]?token\s*[:=]\s*)(\S+)", r"\1[REDACTED]", redacted, flags=re.IGNORECASE)
+    redacted = re.sub(r"(\brefresh[_-]?token\s*[:=]\s*)(\S+)", r"\1[REDACTED]", redacted, flags=re.IGNORECASE)
+    redacted = re.sub(r"(\bclient[_-]?id\s*[:=]\s*)(\S+)", r"\1[REDACTED]", redacted, flags=re.IGNORECASE)
     return redacted
 
 
@@ -69,8 +74,8 @@ def run_command(
         if check and result.returncode != 0:
             print(f"[ERROR] Command failed: {_redact_sensitive_cli_args(command)}")
             if not interactive:
-                print(f"  stdout: {result.stdout.strip()}")
-                print(f"  stderr: {result.stderr.strip()}")
+                print(f"  stdout: {_redact_sensitive_cli_args(result.stdout.strip())}")
+                print(f"  stderr: {_redact_sensitive_cli_args(result.stderr.strip())}")
             return None
         return result
     except Exception as exc:  # pylint: disable=broad-except
