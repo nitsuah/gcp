@@ -72,6 +72,7 @@ def run_command(
                 input=input_data,
             )
         if check and result.returncode != 0:
+            # codeql[py/clear-text-logging-sensitive-data] redacted command
             print(f"[ERROR] Command failed: {_redact_sensitive_cli_args(command)}")
             if not interactive:
                 # Redact sensitive data from stdout/stderr before logging
