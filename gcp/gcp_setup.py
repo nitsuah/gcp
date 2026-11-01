@@ -74,6 +74,7 @@ def run_command(
         if check and result.returncode != 0:
             print(f"[ERROR] Command failed: {_redact_sensitive_cli_args(command)}")
             if not interactive:
+                # Redact sensitive data from stdout/stderr before logging
                 print(f"  stdout: {_redact_sensitive_cli_args(result.stdout.strip())}")
                 print(f"  stderr: {_redact_sensitive_cli_args(result.stderr.strip())}")
             return None
