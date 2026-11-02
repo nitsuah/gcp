@@ -7,6 +7,7 @@ AgentBoard). Enables Gmail, Calendar, Drive, and Gemini APIs, configures
 budget alerts, and outputs OAuth 2.0 client credentials.
 """
 
+import logging
 import subprocess
 import json
 import sys
@@ -16,17 +17,7 @@ import string
 import shutil
 from pathlib import Path
 
-
-def _redact_sensitive_cli_args(text):
-    """Redact sensitive CLI argument values before logging."""
-    redacted = re.sub(r"(--billing-account=)(\S+)", r"\1[REDACTED]", text)
-    redacted = re.sub(r"(--filter-projects=projects/)(\S+)", r"\1[REDACTED]", redacted)
-    # Also redact client secrets and tokens if they appear in output
-    redacted = re.sub(r"(\bclient[_-]?secret\s*[:=]\s*)(\S+)", r"\1[REDACTED]", redacted, flags=re.IGNORECASE)
-    redacted = re.sub(r"(\baccess[_-]?token\s*[:=]\s*)(\S+)", r"\1[REDACTED]", redacted, flags=re.IGNORECASE)
-    redacted = re.sub(r"(\brefresh[_-]?token\s*[:=]\s*)(\S+)", r"\1[REDACTED]", redacted, flags=re.IGNORECASE)
-    redacted = re.sub(r"(\bclient[_-]?id\s*[:=]\s*)(\S+)", r"\1[REDACTED]", redacted, flags=re.IGNORECASE)
-    return redacted
+logger = logging.getLogger(__name__)
 
 
 # GCP project IDs: 6-30 chars, lowercase letters/digits/hyphens, starting with a
@@ -72,16 +63,17 @@ def run_command(
                 input=input_data,
             )
         if check and result.returncode != 0:
-            # codeql[py/clear-text-logging-sensitive-data] redacted command
-            print(f"[ERROR] Command failed: {_redact_sensitive_cli_args(command)}")
+            logger.error("gcloud command failed (exit %s)", result.returncode)
             if not interactive:
-                # Redact sensitive data from stdout/stderr before logging
-                print(f"  stdout: {_redact_sensitive_cli_args(result.stdout.strip())}")
-                print(f"  stderr: {_redact_sensitive_cli_args(result.stderr.strip())}")
+                # Captured command output can contain credentials or provider data.
+                # Omit it rather than applying CLI-argument redaction to arbitrary output.
+                logger.error(
+                    "gcloud command stdout/stderr omitted to avoid logging sensitive output."
+                )
             return None
         return result
     except Exception as exc:  # pylint: disable=broad-except
-        print(f"[ERROR] Exception running command: {exc}")
+        logger.error("gcloud command raised: %s", type(exc).__name__)
         return None
 
 
