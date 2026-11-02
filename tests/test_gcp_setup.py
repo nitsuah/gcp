@@ -35,32 +35,7 @@ def mock_run() -> Iterator[MagicMock]:
         yield mocked
 
 
-# ── _redact_sensitive_cli_args / run_command ─────────────────────────────
-
-
-class TestRedaction:
-    """Sensitive CLI argument values must never be logged."""
-
-    def test_redacts_billing_account(self):
-        """Billing account IDs are replaced with [REDACTED]."""
-        out = gs._redact_sensitive_cli_args(
-            "gcloud billing projects link p --billing-account=0123-ABCD-4567"
-        )
-        assert "0123-ABCD-4567" not in out
-        assert "--billing-account=[REDACTED]" in out
-
-    def test_redacts_filter_projects(self):
-        """Project IDs in --filter-projects are replaced with [REDACTED]."""
-        out = gs._redact_sensitive_cli_args(
-            "gcloud billing budgets create --filter-projects=projects/my-proj"
-        )
-        assert "my-proj" not in out
-        assert "--filter-projects=projects/[REDACTED]" in out
-
-    def test_leaves_other_args_untouched(self):
-        """Commands without sensitive args pass through unchanged."""
-        cmd = "gcloud services enable drive.googleapis.com --project=p1"
-        assert gs._redact_sensitive_cli_args(cmd) == cmd
+# ── run_command
 
 
 class TestRunCommand:
@@ -89,6 +64,7 @@ class TestRunCommand:
         mock_run.return_value = _completed(returncode=1, stdout=None, stderr=None)
         assert gs.run_command("gcloud auth login", interactive=True) is None
         assert "Command failed" in caplog.text
+        assert "gcloud" not in caplog.text
         assert "stdout" not in caplog.text
 
     def test_failure_with_check_returns_none_and_omits_output(
@@ -103,7 +79,7 @@ class TestRunCommand:
         res = gs.run_command("gcloud x --billing-account=SECRET-ID")
         assert res is None
         assert "SECRET-ID" not in caplog.text
-        assert "[REDACTED]" in caplog.text
+        assert "gcloud" not in caplog.text
         assert "exit 1" in caplog.text
         assert "stdout-secret-marker" not in caplog.text
         assert "stderr-secret-marker" not in caplog.text
@@ -123,6 +99,7 @@ class TestRunCommand:
         assert gs.run_command("gcloud x --billing-account=SECRET-ID") is None
         assert "Exception running command" in caplog.text
         assert "OSError" in caplog.text
+        assert "gcloud" not in caplog.text
         assert "SECRET-ID" not in caplog.text
         assert "secret-bearing exception message" not in caplog.text
 

@@ -20,18 +20,6 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def _redact_sensitive_cli_args(text):
-    """Redact sensitive CLI argument values before logging."""
-    redacted = re.sub(r"(--billing-account=)(\S+)", r"\1[REDACTED]", text)
-    redacted = re.sub(r"(--filter-projects=projects/)(\S+)", r"\1[REDACTED]", redacted)
-    # Also redact client secrets and tokens if they appear in output
-    redacted = re.sub(r"(\bclient[_-]?secret\s*[:=]\s*)(\S+)", r"\1[REDACTED]", redacted, flags=re.IGNORECASE)
-    redacted = re.sub(r"(\baccess[_-]?token\s*[:=]\s*)(\S+)", r"\1[REDACTED]", redacted, flags=re.IGNORECASE)
-    redacted = re.sub(r"(\brefresh[_-]?token\s*[:=]\s*)(\S+)", r"\1[REDACTED]", redacted, flags=re.IGNORECASE)
-    redacted = re.sub(r"(\bclient[_-]?id\s*[:=]\s*)(\S+)", r"\1[REDACTED]", redacted, flags=re.IGNORECASE)
-    return redacted
-
-
 # GCP project IDs: 6-30 chars, lowercase letters/digits/hyphens, starting with a
 # letter and not ending in a hyphen. Billing IDs are hyphenated alphanumerics.
 # Both are interpolated into shell commands, so reject anything else up front.
@@ -75,11 +63,7 @@ def run_command(
                 input=input_data,
             )
         if check and result.returncode != 0:
-            logger.error(
-                "Command failed (exit %s): %s",
-                result.returncode,
-                _redact_sensitive_cli_args(command),
-            )
+            logger.error("Command failed (exit %s)", result.returncode)
             if not interactive:
                 # Captured command output can contain credentials or provider data.
                 # Omit it rather than applying CLI-argument redaction to arbitrary output.
@@ -89,11 +73,7 @@ def run_command(
             return None
         return result
     except Exception as exc:  # pylint: disable=broad-except
-        logger.error(
-            "Exception running command (%s): %s",
-            _redact_sensitive_cli_args(command),
-            type(exc).__name__,
-        )
+        logger.error("Exception running command: %s", type(exc).__name__)
         return None
 
 
