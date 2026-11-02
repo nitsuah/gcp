@@ -63,17 +63,17 @@ def run_command(
                 input=input_data,
             )
         if check and result.returncode != 0:
-            logger.error("Command failed (exit %s)", result.returncode)
+            logger.error("gcloud command failed (exit %s)", result.returncode)
             if not interactive:
                 # Captured command output can contain credentials or provider data.
                 # Omit it rather than applying CLI-argument redaction to arbitrary output.
                 logger.error(
-                    "Command stdout/stderr omitted to avoid logging sensitive output."
+                    "gcloud command stdout/stderr omitted to avoid logging sensitive output."
                 )
             return None
         return result
     except Exception as exc:  # pylint: disable=broad-except
-        logger.error("Exception running command: %s", type(exc).__name__)
+        logger.error("gcloud command raised: %s", type(exc).__name__)
         return None
 
 

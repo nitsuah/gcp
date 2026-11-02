@@ -60,17 +60,17 @@ class TestRunCommand:
     def test_interactive_failure_skips_captured_output(
         self, mock_run: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """An interactive failure logs the command without None stdout/stderr."""
+        """An interactive failure logs a safe gcloud failure without captured output."""
         mock_run.return_value = _completed(returncode=1, stdout=None, stderr=None)
         assert gs.run_command("gcloud auth login", interactive=True) is None
-        assert "Command failed" in caplog.text
-        assert "gcloud" not in caplog.text
+        assert "gcloud command failed" in caplog.text
+        assert "gcloud auth login" not in caplog.text
         assert "stdout" not in caplog.text
 
     def test_failure_with_check_returns_none_and_omits_output(
         self, mock_run, caplog: pytest.LogCaptureFixture
     ):
-        """Failure diagnostics redact CLI args and omit arbitrary captured output."""
+        """Failure diagnostics omit command text and arbitrary captured output."""
         mock_run.return_value = _completed(
             returncode=1,
             stdout="stdout-secret-marker",
@@ -79,7 +79,8 @@ class TestRunCommand:
         res = gs.run_command("gcloud x --billing-account=SECRET-ID")
         assert res is None
         assert "SECRET-ID" not in caplog.text
-        assert "gcloud" not in caplog.text
+        assert "--billing-account" not in caplog.text
+        assert "gcloud command failed" in caplog.text
         assert "exit 1" in caplog.text
         assert "stdout-secret-marker" not in caplog.text
         assert "stderr-secret-marker" not in caplog.text
@@ -94,12 +95,12 @@ class TestRunCommand:
     def test_exception_returns_none(
         self, mock_run, caplog: pytest.LogCaptureFixture
     ):
-        """Exceptions are reported by type without logging their message."""
+        """Exceptions are reported by type without logging command or message."""
         mock_run.side_effect = OSError("secret-bearing exception message")
         assert gs.run_command("gcloud x --billing-account=SECRET-ID") is None
-        assert "Exception running command" in caplog.text
+        assert "gcloud command raised" in caplog.text
         assert "OSError" in caplog.text
-        assert "gcloud" not in caplog.text
+        assert "gcloud x" not in caplog.text
         assert "SECRET-ID" not in caplog.text
         assert "secret-bearing exception message" not in caplog.text
 
