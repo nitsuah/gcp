@@ -7,6 +7,7 @@ AgentBoard). Enables Gmail, Calendar, Drive, and Gemini APIs, configures
 budget alerts, and outputs OAuth 2.0 client credentials.
 """
 
+import logging
 import subprocess
 import json
 import sys
@@ -15,6 +16,8 @@ import random
 import string
 import shutil
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def _redact_sensitive_cli_args(text):
@@ -72,16 +75,25 @@ def run_command(
                 input=input_data,
             )
         if check and result.returncode != 0:
-            # codeql[py/clear-text-logging-sensitive-data] redacted command
-            print(f"[ERROR] Command failed: {_redact_sensitive_cli_args(command)}")
+            logger.error(
+                "Command failed (exit %s): %s",
+                result.returncode,
+                _redact_sensitive_cli_args(command),
+            )
             if not interactive:
-                # Redact sensitive data from stdout/stderr before logging
-                print(f"  stdout: {_redact_sensitive_cli_args(result.stdout.strip())}")
-                print(f"  stderr: {_redact_sensitive_cli_args(result.stderr.strip())}")
+                # Captured command output can contain credentials or provider data.
+                # Omit it rather than applying CLI-argument redaction to arbitrary output.
+                logger.error(
+                    "Command stdout/stderr omitted to avoid logging sensitive output."
+                )
             return None
         return result
     except Exception as exc:  # pylint: disable=broad-except
-        print(f"[ERROR] Exception running command: {exc}")
+        logger.error(
+            "Exception running command (%s): %s",
+            _redact_sensitive_cli_args(command),
+            type(exc).__name__,
+        )
         return None
 
 

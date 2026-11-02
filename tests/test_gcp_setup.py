@@ -83,25 +83,31 @@ class TestRunCommand:
         assert "input" not in kwargs
 
     def test_interactive_failure_skips_captured_output(
-        self, mock_run: MagicMock, capsys: pytest.CaptureFixture[str]
+        self, mock_run: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """An interactive failure logs the command without None stdout/stderr."""
         mock_run.return_value = _completed(returncode=1, stdout=None, stderr=None)
         assert gs.run_command("gcloud auth login", interactive=True) is None
-        out = capsys.readouterr().out
-        assert "Command failed" in out
-        assert "stdout" not in out
+        assert "Command failed" in caplog.text
+        assert "stdout" not in caplog.text
 
-    def test_failure_with_check_returns_none_and_redacts(self, mock_run, capsys):
-        """A non-zero exit with check=True returns None and logs a redacted command."""
-        mock_run.return_value = _completed(returncode=1, stdout=" o ", stderr=" e ")
+    def test_failure_with_check_returns_none_and_omits_output(
+        self, mock_run, caplog: pytest.LogCaptureFixture
+    ):
+        """Failure diagnostics redact CLI args and omit arbitrary captured output."""
+        mock_run.return_value = _completed(
+            returncode=1,
+            stdout="stdout-secret-marker",
+            stderr="stderr-secret-marker",
+        )
         res = gs.run_command("gcloud x --billing-account=SECRET-ID")
         assert res is None
-        out = capsys.readouterr().out
-        assert "SECRET-ID" not in out
-        assert "[REDACTED]" in out
-        assert "stdout: o" in out
-        assert "stderr: e" in out
+        assert "SECRET-ID" not in caplog.text
+        assert "[REDACTED]" in caplog.text
+        assert "exit 1" in caplog.text
+        assert "stdout-secret-marker" not in caplog.text
+        assert "stderr-secret-marker" not in caplog.text
+        assert "omitted to avoid logging sensitive output" in caplog.text
 
     def test_failure_without_check_returns_result(self, mock_run):
         """With check=False a non-zero result is returned to the caller."""
@@ -109,11 +115,16 @@ class TestRunCommand:
         res = gs.run_command("gcloud x", check=False)
         assert res.returncode == 2
 
-    def test_exception_returns_none(self, mock_run, capsys):
-        """Exceptions from subprocess.run are caught and reported."""
-        mock_run.side_effect = OSError("boom")
-        assert gs.run_command("gcloud x") is None
-        assert "boom" in capsys.readouterr().out
+    def test_exception_returns_none(
+        self, mock_run, caplog: pytest.LogCaptureFixture
+    ):
+        """Exceptions are reported by type without logging their message."""
+        mock_run.side_effect = OSError("secret-bearing exception message")
+        assert gs.run_command("gcloud x --billing-account=SECRET-ID") is None
+        assert "Exception running command" in caplog.text
+        assert "OSError" in caplog.text
+        assert "SECRET-ID" not in caplog.text
+        assert "secret-bearing exception message" not in caplog.text
 
 
 # ── Simple helpers ───────────────────────────────────────────────────────
