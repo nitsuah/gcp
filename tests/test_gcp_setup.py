@@ -111,6 +111,17 @@ class TestRunCommand:
 class TestHelpers:
     """Project ID generation, gcloud detection and account lookup."""
 
+    @pytest.mark.parametrize("project_id", ["a12345", "a" * 29 + "1", "valid-project-1"])
+    def test_is_valid_project_id_accepts_boundaries(self, project_id):
+        assert gs.is_valid_project_id(project_id) is True
+
+    @pytest.mark.parametrize(
+        "project_id",
+        ["a1234", "a" * 30 + "1", "Abcdef", "-abcde", "abcde-", "agoogle1", "assl123"],
+    )
+    def test_is_valid_project_id_rejects_invalid_boundaries(self, project_id):
+        assert gs.is_valid_project_id(project_id) is False
+
     def test_generate_project_id_format(self):
         """Generated IDs are 'ws-auth-' plus six lowercase alphanumerics."""
         pid = gs.generate_project_id()
