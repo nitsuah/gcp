@@ -27,12 +27,26 @@ def _completed(
     )
 
 
+GCLOUD_PATH = "C:/fake/bin/gcloud.CMD"
+
+
 @pytest.fixture
 def mock_run() -> Iterator[MagicMock]:
-    """Patch subprocess.run inside gcp_setup and return the mock."""
-    with patch("gcp.gcp_setup.subprocess.run") as mocked:
+    """Patch subprocess.run inside gcp_setup and return the mock.
+
+    shutil.which is pinned so the resolved gcloud path is deterministic
+    whether or not the host has gcloud installed.
+    """
+    with patch("gcp.gcp_setup.subprocess.run") as mocked, patch(
+        "gcp.gcp_setup.shutil.which", return_value=GCLOUD_PATH
+    ):
         mocked.return_value = _completed()
         yield mocked
+
+
+def _argv(mock_run: MagicMock, index: int = -1) -> list[str]:
+    """Return the argument list passed to subprocess.run by the given call."""
+    return mock_run.call_args_list[index].args[0]
 
 
 # ── run_command
@@ -44,25 +58,28 @@ class TestRunCommand:
     def test_success_returns_result(self, mock_run):
         """A zero exit returns the CompletedProcess and forwards kwargs."""
         mock_run.return_value = _completed(stdout="ok")
-        res = gs.run_command("gcloud version", input_data="y")
+        res = gs.run_command(["gcloud", "version"], input_data="y")
         assert res.stdout == "ok"
+        assert _argv(mock_run) == [GCLOUD_PATH, "version"]
         _, kwargs = mock_run.call_args
         assert kwargs["input"] == "y"
         assert kwargs["check"] is False
+        assert kwargs["shell"] is False
 
     def test_interactive_leaves_terminal_attached(self, mock_run: MagicMock) -> None:
         """interactive=True must not capture output, so login prompts stay visible."""
-        gs.run_command("gcloud auth login", interactive=True)
+        gs.run_command(["gcloud", "auth", "login"], interactive=True)
         _, kwargs = mock_run.call_args
         assert "capture_output" not in kwargs
         assert "input" not in kwargs
+        assert kwargs["shell"] is False
 
     def test_interactive_failure_skips_captured_output(
         self, mock_run: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """An interactive failure logs a safe gcloud failure without captured output."""
         mock_run.return_value = _completed(returncode=1, stdout=None, stderr=None)
-        assert gs.run_command("gcloud auth login", interactive=True) is None
+        assert gs.run_command(["gcloud", "auth", "login"], interactive=True) is None
         assert "gcloud command failed" in caplog.text
         assert "gcloud auth login" not in caplog.text
         assert "stdout" not in caplog.text
@@ -76,7 +93,7 @@ class TestRunCommand:
             stdout="stdout-secret-marker",
             stderr="stderr-secret-marker",
         )
-        res = gs.run_command("gcloud x --billing-account=SECRET-ID")
+        res = gs.run_command(["gcloud", "x", "--billing-account=SECRET-ID"])
         assert res is None
         assert "SECRET-ID" not in caplog.text
         assert "--billing-account" not in caplog.text
@@ -89,7 +106,7 @@ class TestRunCommand:
     def test_failure_without_check_returns_result(self, mock_run):
         """With check=False a non-zero result is returned to the caller."""
         mock_run.return_value = _completed(returncode=2)
-        res = gs.run_command("gcloud x", check=False)
+        res = gs.run_command(["gcloud", "x"], check=False)
         assert res.returncode == 2
 
     def test_exception_returns_none(
@@ -97,12 +114,62 @@ class TestRunCommand:
     ):
         """Exceptions are reported by type without logging command or message."""
         mock_run.side_effect = OSError("secret-bearing exception message")
-        assert gs.run_command("gcloud x --billing-account=SECRET-ID") is None
+        assert gs.run_command(["gcloud", "x", "--billing-account=SECRET-ID"]) is None
         assert "gcloud command raised" in caplog.text
         assert "OSError" in caplog.text
         assert "gcloud x" not in caplog.text
         assert "SECRET-ID" not in caplog.text
         assert "secret-bearing exception message" not in caplog.text
+
+    def test_resolves_gcloud_to_full_path(self, mock_run):
+        """args[0] 'gcloud' is replaced by the path shutil.which reports."""
+        with patch("gcp.gcp_setup.shutil.which", return_value="C:/sdk/gcloud.cmd"):
+            gs.run_command(["gcloud", "config", "get-value", "account"])
+        assert _argv(mock_run) == ["C:/sdk/gcloud.cmd", "config", "get-value", "account"]
+
+    def test_falls_back_to_bare_gcloud_name(self, mock_run):
+        """Without a PATH match the bare name is still passed through."""
+        with patch("gcp.gcp_setup.shutil.which", return_value=None):
+            gs.run_command(["gcloud", "version"])
+        assert _argv(mock_run) == ["gcloud", "version"]
+        assert mock_run.call_args.kwargs["shell"] is False
+
+    def test_non_gcloud_program_is_not_rewritten(self, mock_run):
+        """Only a leading 'gcloud' is resolved; other programs are left alone."""
+        gs.run_command(["python", "-V"])
+        assert _argv(mock_run) == ["python", "-V"]
+        assert mock_run.call_args.kwargs["shell"] is False
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "Workspace Hub",
+            'say "hi" and \'bye\'',
+            "left;right",
+            "first && second",
+            "$(id)",
+            "`whoami`",
+            'all: "a b"; c && $(d) `e` f',
+        ],
+    )
+    def test_metacharacter_value_is_one_unchanged_element(self, mock_run, value):
+        """Values with spaces, quotes, ';', '&&', '$()' and backticks stay one element."""
+        gs.run_command(["gcloud", "x", f"--name={value}", value])
+        argv = _argv(mock_run)
+        assert argv[-2:] == [f"--name={value}", value]
+        assert len(argv) == 4
+        assert mock_run.call_args.kwargs["shell"] is False
+
+    @pytest.mark.parametrize(
+        "value", ["BILL; rm -rf ~", "x && y", "$(id)", "`id`", "two words"]
+    )
+    def test_caller_passes_metacharacter_value_as_one_element(self, mock_run, value):
+        """A caller (link_billing) hands an unusual billing value over intact."""
+        gs.link_billing("proj-1", value)
+        argv = _argv(mock_run)
+        assert argv[-1] == f"--billing-account={value}"
+        assert argv.count(f"--billing-account={value}") == 1
+        assert mock_run.call_args.kwargs["shell"] is False
 
 
 # ── Simple helpers ───────────────────────────────────────────────────────
@@ -144,6 +211,7 @@ class TestHelpers:
         """The active account is returned without surrounding whitespace."""
         mock_run.return_value = _completed(stdout="me@example.com\n")
         assert gs.get_gcloud_account() == "me@example.com"
+        assert _argv(mock_run) == [GCLOUD_PATH, "config", "get-value", "account"]
 
     @pytest.mark.parametrize("rc, stdout", [(0, "  \n"), (1, "me@example.com")])
     def test_get_gcloud_account_none(self, mock_run, rc, stdout):
@@ -227,7 +295,7 @@ class TestProjectProvisioning:
         """A successful gcloud call returns True."""
         assert gs.create_project("proj-1") is True
         cmd = mock_run.call_args[0][0]
-        assert cmd.startswith("gcloud projects create proj-1")
+        assert cmd == [GCLOUD_PATH, "projects", "create", "proj-1", "--name=Workspace Automation Hub"]
 
     def test_create_project_failure(self, mock_run):
         """A failed gcloud call returns False."""
@@ -258,13 +326,14 @@ class TestProjectProvisioning:
         """All required APIs are enabled in one gcloud call."""
         gs.enable_apis("proj-1")
         cmd = mock_run.call_args[0][0]
-        apis = {tok for tok in cmd.split() if tok.endswith(".googleapis.com")}
+        apis = {tok for tok in cmd if tok.endswith(".googleapis.com")}
         assert apis == {
             f"{name}.googleapis.com"
             for name in ("gmail", "calendar-json", "drive")
             + ("generativelanguage", "billingbudgets")
         }
-        assert cmd.endswith("--project=proj-1")
+        assert cmd[-1] == "--project=proj-1"
+        assert cmd[:3] == [GCLOUD_PATH, "services", "enable"]
         assert "APIs enabled successfully" in capsys.readouterr().out
 
     def test_enable_apis_failure_exits(self, mock_run):
@@ -283,6 +352,7 @@ class TestProjectProvisioning:
         assert "--threshold-rule=percent=0.5" in cmd
         assert "--threshold-rule=percent=0.9" in cmd
         assert "--filter-projects=projects/proj-1" in cmd
+        assert "--display-name=Workspace Integration Budget" in cmd
         assert "Budget alert created" in capsys.readouterr().out
 
     def test_create_budget_failure_warns(self, mock_run, capsys):
@@ -300,11 +370,12 @@ def _dispatch(
 ) -> Callable[..., subprocess.CompletedProcess]:
     """Return a subprocess.run side effect keyed on a command substring."""
 
-    def _side_effect(command: str, **_kwargs: Any) -> subprocess.CompletedProcess:
+    def _side_effect(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess:
+        joined = " ".join(command)
         for key, value in responses.items():
-            if key in command:
+            if key in joined:
                 return value
-        raise AssertionError(f"unexpected command: {command}")
+        raise AssertionError(f"unexpected command: {joined}")
 
     return _side_effect
 
@@ -332,7 +403,7 @@ class TestTryCreateOauthClient:
         cmds = [c[0][0] for c in mock_run.call_args_list]
         assert "--support-email=me@x.com" in cmds[0]
         assert "--brand=brands/1" in cmds[1]
-        assert not any("oauth-brands list" in c for c in cmds)
+        assert not any("oauth-brands list" in " ".join(c) for c in cmds)
 
     @pytest.mark.parametrize(
         "create_res",
@@ -369,7 +440,9 @@ class TestTryCreateOauthClient:
             }
         )
         assert gs.try_create_oauth_client("p", "a") is None
-        assert not any("oauth-clients" in c[0][0] for c in mock_run.call_args_list)
+        assert not any(
+            "oauth-clients" in " ".join(c[0][0]) for c in mock_run.call_args_list
+        )
 
     @pytest.mark.parametrize(
         "client_res", [_completed(returncode=1), _completed(stdout="not json")]
@@ -503,7 +576,7 @@ class TestMain:
         main_env["get_gcloud_account"].side_effect = [None, "me@x.com"]
         gs.main()
         main_env["run_command"].assert_called_once_with(
-            "gcloud auth login", interactive=True
+            ["gcloud", "auth", "login"], interactive=True
         )
         main_env["create_project"].assert_called_once()
 
@@ -562,3 +635,42 @@ class TestMain:
         with pytest.raises(SystemExit):
             gs.main()
         main_env["link_billing"].assert_not_called()
+
+
+class TestShellFreeInvocation:
+    """Every subprocess.run call made by gcp_setup is a shell-free argument list."""
+
+    def test_every_subprocess_call_passes_shell_false(
+        self, mock_run, tmp_path, monkeypatch, capsys
+    ):
+        """A representative full run (login, billing, APIs, OAuth) never uses a shell."""
+        monkeypatch.setattr(gs, "__file__", str(tmp_path / "gcp" / "gcp_setup.py"))
+        accounts = iter(["", "me@x.com"])  # no session first, so login runs
+
+        def _respond(command, **_kwargs):
+            joined = " ".join(command)
+            if "config get-value account" in joined:
+                return _completed(stdout=next(accounts))
+            if "billing accounts list" in joined:
+                return _completed(stdout=json.dumps(MENU_ENTRIES))
+            if "oauth-brands create" in joined:
+                return _completed(stdout=json.dumps({"name": "brands/1"}))
+            if "oauth-clients create" in joined:
+                return CLIENT_OK
+            return _completed()
+
+        mock_run.side_effect = _respond
+        with patch("builtins.input", side_effect=["1", "my-proj-1"]):
+            exit_error = None
+            try:
+                gs.main()
+            except SystemExit as exc:  # reported below, after the call checks
+                exit_error = exc
+
+        calls = mock_run.call_args_list
+        for call in calls:
+            assert isinstance(call.args[0], list), call.args[0]
+            assert call.kwargs["shell"] is False
+        assert len(calls) >= 9
+        assert exit_error is None
+        assert "Setup complete" in capsys.readouterr().out
