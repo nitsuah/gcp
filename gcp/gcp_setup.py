@@ -25,11 +25,16 @@ _rng = SystemRandom()
 
 # GCP project IDs: 6-30 chars, lowercase letters/digits/hyphens, starting with a
 # letter and not ending in a hyphen. Billing IDs are hyphenated alphanumerics.
-# Both are interpolated into shell commands, so reject anything else up front.
+# Both are passed to gcloud as argv elements, so reject anything else up front.
 PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
 BILLING_ID_RE = re.compile(r"^[A-Za-z0-9-]+$")
 # GCP also refuses project IDs containing these words.
 RESTRICTED_PROJECT_ID_WORDS = ("google", "ssl")
+# Values gcloud receives from outside this script. gcloud runs as a .cmd shim on
+# Windows, where cmd.exe parses shell metacharacters even without a shell, so
+# only plain shapes are accepted. No &, |, %, ^, !, <, > or quote characters.
+ACCOUNT_RE = re.compile(r"[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+BRAND_NAME_RE = re.compile(r"projects/[A-Za-z0-9-]+/brands/[0-9]+")
 
 
 def is_valid_project_id(project_id: str) -> bool:
@@ -39,27 +44,40 @@ def is_valid_project_id(project_id: str) -> bool:
     )
 
 
+def _gcloud_executable() -> str:
+    """Return the full path to gcloud, or the bare name if it is not on PATH.
+
+    On Windows gcloud is a .cmd shim, which subprocess only finds when given
+    the resolved path, so the lookup is done here rather than at each call site.
+    """
+    return shutil.which("gcloud") or "gcloud"
+
+
 def run_command(
-    command: str,
+    args: list[str],
     check: bool = True,
     input_data: str | None = None,
     *,
     interactive: bool = False,
 ) -> subprocess.CompletedProcess | None:
-    """Run a CLI command and return the result.
+    """Run a CLI command given as an argument list and return the result.
+
+    The command is executed directly (shell=False), so each element is passed
+    to the program verbatim and is never parsed by a shell. A leading "gcloud"
+    is replaced with the resolved executable path.
 
     interactive=True leaves stdin/stdout/stderr attached to the terminal, for
     commands like `gcloud auth login` that print a URL and wait for a code.
     """
+    argv = [_gcloud_executable(), *args[1:]] if args and args[0] == "gcloud" else list(args)
     try:
         if interactive:
-            result = subprocess.run(  # nosec B602
-                command, shell=True, check=False, text=True
-            )
+            # argv list, no shell; values validated above
+            result = subprocess.run(argv, shell=False, check=False, text=True)  # nosec B603
         else:
-            result = subprocess.run(  # nosec B602
-                command,
-                shell=True,
+            result = subprocess.run(  # nosec B603 - argv list, no shell; values validated above
+                argv,
+                shell=False,
                 check=False,
                 text=True,
                 capture_output=True,
@@ -93,7 +111,7 @@ def check_gcloud_installed():
 
 def get_gcloud_account():
     """Return the active gcloud account, or None if unauthenticated."""
-    res = run_command("gcloud config get-value account", check=False)
+    res = run_command(["gcloud", "config", "get-value", "account"], check=False)
     if res and res.returncode == 0 and res.stdout.strip():
         return res.stdout.strip()
     return None
@@ -101,7 +119,9 @@ def get_gcloud_account():
 
 def list_billing_accounts():
     """Return a list of billing account dicts, or empty list on failure."""
-    res = run_command("gcloud billing accounts list --format=json", check=False)
+    res = run_command(
+        ["gcloud", "billing", "accounts", "list", "--format=json"], check=False
+    )
     if res and res.returncode == 0:
         try:
             return json.loads(res.stdout)
@@ -136,7 +156,7 @@ def create_project(project_id):
     """Create a new GCP project and return True on success."""
     print(f"\n[INFO] Creating GCP project '{project_id}'…")
     res = run_command(
-        f'gcloud projects create {project_id} --name="Workspace Automation Hub"'
+        ["gcloud", "projects", "create", project_id, "--name=Workspace Automation Hub"]
     )
     return res is not None
 
@@ -145,7 +165,14 @@ def link_billing(project_id, billing_id):
     """Link billing account to the project."""
     print(f"[INFO] Linking billing account [REDACTED] to {project_id}…")
     res = run_command(
-        f"gcloud billing projects link {project_id} --billing-account={billing_id}",
+        [
+            "gcloud",
+            "billing",
+            "projects",
+            "link",
+            project_id,
+            f"--billing-account={billing_id}",
+        ],
         check=False,
     )
     if res is None or res.returncode != 0:
@@ -163,7 +190,7 @@ def enable_apis(project_id):
     ]
     print(f"\n[INFO] Enabling APIs: {', '.join(apis)}")
     res = run_command(
-        f"gcloud services enable {' '.join(apis)} --project={project_id}"
+        ["gcloud", "services", "enable", *apis, f"--project={project_id}"]
     )
     if res is None:
         print("[ERROR] Failed to enable APIs. Verify billing is linked.")
@@ -174,15 +201,18 @@ def enable_apis(project_id):
 def create_budget(project_id, billing_id):
     """Create a $50 budget alert with 50 % and 90 % thresholds."""
     print("\n[INFO] Creating budget alert ($50 USD / month)…")
-    cmd = (
-        f"gcloud billing budgets create "
-        f"--billing-account={billing_id} "
-        f'--display-name="Workspace Integration Budget" '
-        f"--budget-amount=50.00USD "
-        f"--threshold-rule=percent=0.5 "
-        f"--threshold-rule=percent=0.9 "
-        f"--filter-projects=projects/{project_id}"
-    )
+    cmd = [
+        "gcloud",
+        "billing",
+        "budgets",
+        "create",
+        f"--billing-account={billing_id}",
+        "--display-name=Workspace Integration Budget",
+        "--budget-amount=50.00USD",
+        "--threshold-rule=percent=0.5",
+        "--threshold-rule=percent=0.9",
+        f"--filter-projects=projects/{project_id}",
+    ]
     res = run_command(cmd, check=False)
     if res and res.returncode == 0:
         print("[INFO] Budget alert created: 50 % and 90 % notifications active.")
@@ -195,14 +225,24 @@ def try_create_oauth_client(project_id, account):
     Attempt to create OAuth consent screen brand and web client via gcloud alpha.
     Returns a dict with {client_id, client_secret} on success, or None on failure.
     """
+    # Refuse values that do not match a plain email shape before any gcloud call.
+    if not isinstance(account, str) or not ACCOUNT_RE.fullmatch(account):
+        logger.error("Support account is not a plain email address; skipping OAuth client creation.")
+        return None
+
     # Step 1 — create or locate OAuth brand
     brand_name = None
-    brand_cmd = (
-        f"gcloud alpha apis oauth-brands create "
-        f'--application-title="Workspace Hub" '
-        f"--support-email={account} "
-        f"--project={project_id} --format=json"
-    )
+    brand_cmd = [
+        "gcloud",
+        "alpha",
+        "apis",
+        "oauth-brands",
+        "create",
+        "--application-title=Workspace Hub",
+        f"--support-email={account}",
+        f"--project={project_id}",
+        "--format=json",
+    ]
     res = run_command(brand_cmd, check=False)
     if res and res.returncode == 0:
         try:
@@ -213,7 +253,15 @@ def try_create_oauth_client(project_id, account):
     if not brand_name:
         # Brand may already exist — list it
         list_res = run_command(
-            f"gcloud alpha apis oauth-brands list --project={project_id} --format=json",
+            [
+                "gcloud",
+                "alpha",
+                "apis",
+                "oauth-brands",
+                "list",
+                f"--project={project_id}",
+                "--format=json",
+            ],
             check=False,
         )
         if list_res and list_res.returncode == 0:
@@ -226,18 +274,25 @@ def try_create_oauth_client(project_id, account):
 
     if not brand_name:
         return None
+    if not isinstance(brand_name, str) or not BRAND_NAME_RE.fullmatch(brand_name):
+        logger.error("OAuth brand name has an unexpected format; skipping OAuth client creation.")
+        return None
 
     print(f"[INFO] OAuth brand: {brand_name}")
 
     # Step 2 — create the Web application client
-    client_cmd = (
-        f"gcloud alpha apis oauth-clients create "
-        f'--display-name="Overseer Automation Client" '
-        f"--brand={brand_name} "
-        f"--project={project_id} "
-        f'--redirect-uris="http://localhost:3000/oauth2callback" '
-        f"--format=json"
-    )
+    client_cmd = [
+        "gcloud",
+        "alpha",
+        "apis",
+        "oauth-clients",
+        "create",
+        "--display-name=Overseer Automation Client",
+        f"--brand={brand_name}",
+        f"--project={project_id}",
+        "--redirect-uris=http://localhost:3000/oauth2callback",
+        "--format=json",
+    ]
     res = run_command(client_cmd, check=False)
     if res and res.returncode == 0:
         try:
@@ -309,7 +364,7 @@ def main():
     account = get_gcloud_account()
     if not account:
         print("[INFO] No active gcloud session. Launching login…")
-        run_command("gcloud auth login", interactive=True)
+        run_command(["gcloud", "auth", "login"], interactive=True)
         account = get_gcloud_account()
         if not account:
             print("[ERROR] Authentication failed.")
