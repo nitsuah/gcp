@@ -72,9 +72,10 @@ def run_command(
     argv = [_gcloud_executable(), *args[1:]] if args and args[0] == "gcloud" else list(args)
     try:
         if interactive:
-            result = subprocess.run(argv, shell=False, check=False, text=True)
+            # argv list, no shell; values validated above
+            result = subprocess.run(argv, shell=False, check=False, text=True)  # nosec B603
         else:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603 - argv list, no shell; values validated above
                 argv,
                 shell=False,
                 check=False,
