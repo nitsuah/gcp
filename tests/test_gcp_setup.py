@@ -113,6 +113,7 @@ class TestHelpers:
 
     @pytest.mark.parametrize("project_id", ["a12345", "a" * 29 + "1", "valid-project-1"])
     def test_is_valid_project_id_accepts_boundaries(self, project_id):
+        """Shortest, longest and hyphenated valid IDs are accepted."""
         assert gs.is_valid_project_id(project_id) is True
 
     @pytest.mark.parametrize(
@@ -120,6 +121,7 @@ class TestHelpers:
         ["a1234", "a" * 30 + "1", "Abcdef", "-abcde", "abcde-", "agoogle1", "assl123"],
     )
     def test_is_valid_project_id_rejects_invalid_boundaries(self, project_id):
+        """Too short, too long, uppercase, edge hyphens and reserved words are refused."""
         assert gs.is_valid_project_id(project_id) is False
 
     def test_generate_project_id_format(self):

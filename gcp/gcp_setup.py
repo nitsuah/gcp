@@ -12,12 +12,15 @@ import subprocess
 import json
 import sys
 import re
-import random
 import string
 import shutil
 from pathlib import Path
+from secrets import SystemRandom
 
 logger = logging.getLogger(__name__)
+
+# Non-secret identifier suffix; SystemRandom keeps the same random API.
+_rng = SystemRandom()
 
 
 # GCP project IDs: 6-30 chars, lowercase letters/digits/hyphens, starting with a
@@ -79,7 +82,7 @@ def run_command(
 
 def generate_project_id():
     """Return a random RFC-compliant GCP project ID."""
-    suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    suffix = "".join(_rng.choices(string.ascii_lowercase + string.digits, k=6))
     return f"ws-auth-{suffix}"
 
 

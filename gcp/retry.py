@@ -1,13 +1,16 @@
 """Shared retry-with-backoff helper for Google Drive API requests."""
 
 import logging
-import random
 import time
+from secrets import SystemRandom
 from typing import Callable
 
 from googleapiclient.errors import HttpError
 
 DEFAULT_MAX_BACKOFF = 60.0
+
+# Jitter is not security-sensitive; SystemRandom keeps the same random API.
+_rng = SystemRandom()
 
 
 def compute_backoff(delay: float, max_backoff: float) -> tuple:
@@ -16,7 +19,7 @@ def compute_backoff(delay: float, max_backoff: float) -> tuple:
     step, without sleeping -- shared by every retry loop in this module and
     in copy_folder.py so the jitter/doubling math has exactly one definition.
     """
-    sleep_time = min(delay + random.uniform(0, 1), max_backoff)
+    sleep_time = min(delay + _rng.uniform(0, 1), max_backoff)
     next_delay = min(delay * 2, max_backoff)
     return sleep_time, next_delay
 
