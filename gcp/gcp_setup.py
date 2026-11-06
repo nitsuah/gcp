@@ -30,6 +30,11 @@ PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
 BILLING_ID_RE = re.compile(r"^[A-Za-z0-9-]+$")
 # GCP also refuses project IDs containing these words.
 RESTRICTED_PROJECT_ID_WORDS = ("google", "ssl")
+# Values gcloud receives from outside this script. gcloud runs as a .cmd shim on
+# Windows, where cmd.exe parses shell metacharacters even without a shell, so
+# only plain shapes are accepted. No &, |, %, ^, !, <, > or quote characters.
+ACCOUNT_RE = re.compile(r"[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+BRAND_NAME_RE = re.compile(r"projects/[A-Za-z0-9-]+/brands/[0-9]+")
 
 
 def is_valid_project_id(project_id: str) -> bool:
@@ -219,6 +224,11 @@ def try_create_oauth_client(project_id, account):
     Attempt to create OAuth consent screen brand and web client via gcloud alpha.
     Returns a dict with {client_id, client_secret} on success, or None on failure.
     """
+    # Refuse values that do not match a plain email shape before any gcloud call.
+    if not isinstance(account, str) or not ACCOUNT_RE.fullmatch(account):
+        logger.error("Support account is not a plain email address; skipping OAuth client creation.")
+        return None
+
     # Step 1 — create or locate OAuth brand
     brand_name = None
     brand_cmd = [
@@ -262,6 +272,9 @@ def try_create_oauth_client(project_id, account):
                 pass
 
     if not brand_name:
+        return None
+    if not isinstance(brand_name, str) or not BRAND_NAME_RE.fullmatch(brand_name):
+        logger.error("OAuth brand name has an unexpected format; skipping OAuth client creation.")
         return None
 
     print(f"[INFO] OAuth brand: {brand_name}")

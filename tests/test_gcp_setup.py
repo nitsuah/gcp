@@ -391,7 +391,7 @@ class TestTryCreateOauthClient:
         mock_run.side_effect = _dispatch(
             {
                 "oauth-brands create": _completed(
-                    stdout=json.dumps({"name": "brands/1"})
+                    stdout=json.dumps({"name": "projects/p/brands/1"})
                 ),
                 "oauth-clients create": CLIENT_OK,
             }
@@ -402,7 +402,7 @@ class TestTryCreateOauthClient:
         }
         cmds = [c[0][0] for c in mock_run.call_args_list]
         assert "--support-email=me@x.com" in cmds[0]
-        assert "--brand=brands/1" in cmds[1]
+        assert "--brand=projects/p/brands/1" in cmds[1]
         assert not any("oauth-brands list" in " ".join(c) for c in cmds)
 
     @pytest.mark.parametrize(
@@ -415,13 +415,13 @@ class TestTryCreateOauthClient:
             {
                 "oauth-brands create": create_res,
                 "oauth-brands list": _completed(
-                    stdout=json.dumps([{"name": "brands/9"}])
+                    stdout=json.dumps([{"name": "projects/p/brands/9"}])
                 ),
                 "oauth-clients create": CLIENT_OK,
             }
         )
-        assert gs.try_create_oauth_client("p", "a")["client_id"] == "cid"
-        assert "--brand=brands/9" in mock_run.call_args_list[-1][0][0]
+        assert gs.try_create_oauth_client("p", "a@x.com")["client_id"] == "cid"
+        assert "--brand=projects/p/brands/9" in mock_run.call_args_list[-1][0][0]
 
     @pytest.mark.parametrize(
         "list_res",
@@ -439,7 +439,7 @@ class TestTryCreateOauthClient:
                 "oauth-brands list": list_res,
             }
         )
-        assert gs.try_create_oauth_client("p", "a") is None
+        assert gs.try_create_oauth_client("p", "a@x.com") is None
         assert not any(
             "oauth-clients" in " ".join(c[0][0]) for c in mock_run.call_args_list
         )
@@ -452,12 +452,117 @@ class TestTryCreateOauthClient:
         mock_run.side_effect = _dispatch(
             {
                 "oauth-brands create": _completed(
-                    stdout=json.dumps({"name": "brands/1"})
+                    stdout=json.dumps({"name": "projects/p/brands/1"})
                 ),
                 "oauth-clients create": client_res,
             }
         )
-        assert gs.try_create_oauth_client("p", "a") is None
+        assert gs.try_create_oauth_client("p", "a@x.com") is None
+
+
+class TestOauthInputValidation:
+    """Account and brand values are checked before gcloud is asked to use them."""
+
+    @pytest.mark.parametrize(
+        "account",
+        ["me@example.com", "first.last+tag@sub.example.co", "a_b-c@x-y.io"],
+    )
+    def test_valid_account_passes_through(self, mock_run, account):
+        """A plain email reaches the brand command as --support-email."""
+        mock_run.side_effect = _dispatch(
+            {
+                "oauth-brands create": _completed(
+                    stdout=json.dumps({"name": "projects/p/brands/1"})
+                ),
+                "oauth-clients create": CLIENT_OK,
+            }
+        )
+        assert gs.try_create_oauth_client("p", account) == {
+            "client_id": "cid",
+            "client_secret": "csec",
+        }
+        assert f"--support-email={account}" in mock_run.call_args_list[0].args[0]
+
+    @pytest.mark.parametrize(
+        "account",
+        [
+            "me&x@example.com",
+            "me|x@example.com",
+            "me%x@example.com",
+            "me^x@example.com",
+            "me!x@example.com",
+            "me<x@example.com",
+            "me>x@example.com",
+            'me"x@example.com',
+            "me@example.com&calc",
+            "me@example.com | whoami",
+            "me x@example.com",
+            "me@example",
+            "me@example.c",
+            "me@example.com\n",
+            "",
+            None,
+        ],
+    )
+    def test_unsafe_account_refused_without_gcloud(
+        self, mock_run, caplog: pytest.LogCaptureFixture, account
+    ):
+        """An account with cmd-significant or non-email characters never runs gcloud."""
+        assert gs.try_create_oauth_client("p", account) is None
+        mock_run.assert_not_called()
+        assert "not a plain email address" in caplog.text
+        if account:
+            assert account not in caplog.text
+
+    @pytest.mark.parametrize(
+        "brand",
+        [
+            "brands/1",
+            "projects/p/brands/abc",
+            "projects/p/brands/1&calc",
+            "projects/p/brands/1 | whoami",
+            "projects/p/brands/1%PATH%",
+            "projects/p/brands/1^x",
+            "projects/p/brands/1!x",
+            'projects/p/brands/1"x',
+            "projects/p/brands/1\n",
+            "projects/p/brands/1/extra",
+        ],
+    )
+    def test_unexpected_brand_from_create_refused(
+        self, mock_run, caplog: pytest.LogCaptureFixture, brand
+    ):
+        """A brand name outside projects/<id>/brands/<n> never reaches client creation."""
+        mock_run.side_effect = _dispatch(
+            {
+                "oauth-brands create": _completed(
+                    stdout=json.dumps({"name": brand})
+                ),
+                "oauth-clients create": CLIENT_OK,
+            }
+        )
+        assert gs.try_create_oauth_client("p", "me@example.com") is None
+        assert not any(
+            "oauth-clients" in " ".join(c.args[0]) for c in mock_run.call_args_list
+        )
+        assert "unexpected format" in caplog.text
+
+    def test_unexpected_brand_from_list_refused(self, mock_run, caplog):
+        """The fallback brand from 'oauth-brands list' is validated too."""
+        mock_run.side_effect = _dispatch(
+            {
+                "oauth-brands create": _completed(returncode=1),
+                "oauth-brands list": _completed(
+                    stdout=json.dumps([{"name": "projects/p/brands/1&calc"}])
+                ),
+                "oauth-clients create": CLIENT_OK,
+            }
+        )
+        assert gs.try_create_oauth_client("p", "me@example.com") is None
+        assert not any(
+            "oauth-clients" in " ".join(c.args[0]) for c in mock_run.call_args_list
+        )
+        assert "unexpected format" in caplog.text
 
 
 # ── client_secrets.json / manual steps ───────────────────────────────────
@@ -654,7 +759,7 @@ class TestShellFreeInvocation:
             if "billing accounts list" in joined:
                 return _completed(stdout=json.dumps(MENU_ENTRIES))
             if "oauth-brands create" in joined:
-                return _completed(stdout=json.dumps({"name": "brands/1"}))
+                return _completed(stdout=json.dumps({"name": "projects/my-proj-1/brands/1"}))
             if "oauth-clients create" in joined:
                 return CLIENT_OK
             return _completed()
