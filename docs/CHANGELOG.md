@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Dependencies: `pandas` 3.1.1 on Python 3.11+ (Python 3.10 stays on 2.3.3 through an environment marker, since pandas 3 needs 3.11) and `google-api-python-client` 2.202.0. In `apps/`, `express` 4 → 5.3, `dotenv` 16 → 18 (loaded with `quiet: true` to keep startup output unchanged) and `googleapis` 189 → 190. `pip-audit` and `npm audit` report no known vulnerabilities.
 - Retry backoff jitter and generated project-ID suffixes use `secrets.SystemRandom` (same API, same ranges); `tests/test_retry.py` covers the jitter range and the backoff cap.
 
 ### Security
