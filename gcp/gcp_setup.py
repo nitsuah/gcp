@@ -8,7 +8,7 @@ budget alerts, and outputs OAuth 2.0 client credentials.
 """
 
 import logging
-import subprocess
+import subprocess  # nosec B404 - argv lists only, shell=False (see run_command)
 import json
 import sys
 import re
