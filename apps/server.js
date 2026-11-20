@@ -15,7 +15,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Secure Local Token Storage Configuration
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 // Dev-only key for demo mode (no OAuth credentials). Demo mode stores mock tokens only.
 // Never used when real OAuth credentials are configured.
 const DEMO_ENCRYPTION_SECRET = 'DEV-ONLY-demo-mode-key-do-not-use-for-real-tokens';
@@ -23,9 +23,23 @@ let usingDemoKey = false;
 const ENCRYPTION_SECRET = resolveEncryptionSecret();
 // Demo mode gets its own store so it can never overwrite real tokens encrypted with the real key
 const TOKENS_FILE = path.join(DATA_DIR, usingDemoKey ? 'tokens.demo.json' : 'tokens.json');
-// Hash the encryption key to ensure it is exactly 32 bytes
-const ENCRYPTION_KEY = crypto.createHash('sha256').update(ENCRYPTION_SECRET).digest();
-const IV_LENGTH = 16;
+// Current format: "v2:<salt>:<iv>:<tag>:<ciphertext>" (hex) using AES-256-GCM with a per-file
+// scrypt-derived key. Files written by earlier versions (AES-256-CBC, unsalted SHA-256 key) are
+// still readable and are re-written in the current format on first load.
+const FORMAT_PREFIX = 'v2:';
+const SALT_LENGTH = 16;
+const GCM_IV_LENGTH = 12;
+const LEGACY_KEY = crypto.createHash('sha256').update(ENCRYPTION_SECRET).digest();
+const derivedKeys = new Map();
+
+function deriveKey(salt) {
+  const id = salt.toString('hex');
+  if (!derivedKeys.has(id)) {
+    if (derivedKeys.size >= 8) derivedKeys.clear();
+    derivedKeys.set(id, crypto.scryptSync(ENCRYPTION_SECRET, salt, 32));
+  }
+  return derivedKeys.get(id);
+}
 
 /**
  * Returns the secret used to encrypt stored OAuth tokens.
@@ -51,28 +65,36 @@ let configState = {
 };
 
 /**
- * Encrypt data using AES-256-CBC
+ * Encrypt data using AES-256-GCM (authenticated) with a salted scrypt-derived key
  */
 function encrypt(text) {
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
-  let encrypted = cipher.update(text);
-  encrypted = Buffer.concat([encrypted, cipher.final()]);
-  return iv.toString('hex') + ':' + encrypted.toString('hex');
+  const salt = crypto.randomBytes(SALT_LENGTH);
+  const iv = crypto.randomBytes(GCM_IV_LENGTH);
+  const cipher = crypto.createCipheriv('aes-256-gcm', deriveKey(salt), iv);
+  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ['v2', salt.toString('hex'), iv.toString('hex'), tag.toString('hex'), encrypted.toString('hex')].join(':');
 }
 
 /**
- * Decrypt data using AES-256-CBC
+ * Decrypt data. Returns { text, legacy } or null when the data cannot be authenticated/decrypted.
  */
 function decrypt(text) {
   try {
+    if (text.startsWith(FORMAT_PREFIX)) {
+      const [, saltHex, ivHex, tagHex, dataHex] = text.trim().split(':');
+      const decipher = crypto.createDecipheriv('aes-256-gcm', deriveKey(Buffer.from(saltHex, 'hex')), Buffer.from(ivHex, 'hex'));
+      decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+      const plain = Buffer.concat([decipher.update(Buffer.from(dataHex, 'hex')), decipher.final()]);
+      return { text: plain.toString('utf8'), legacy: false };
+    }
+    // Legacy AES-256-CBC format: "<iv>:<ciphertext>"
     const textParts = text.split(':');
     const iv = Buffer.from(textParts.shift(), 'hex');
     const encryptedText = Buffer.from(textParts.join(':'), 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
-    let decrypted = decipher.update(encryptedText);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-    return decrypted.toString();
+    const decipher = crypto.createDecipheriv('aes-256-cbc', LEGACY_KEY, iv);
+    const plain = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
+    return { text: plain.toString('utf8'), legacy: true };
   } catch (e) {
     console.error('[ERROR] Decryption of tokens failed:', e.message);
     return null;
@@ -90,7 +112,13 @@ function loadTokens() {
     const encryptedData = fs.readFileSync(TOKENS_FILE, 'utf8');
     if (!encryptedData.trim()) return {};
     const decrypted = decrypt(encryptedData);
-    return decrypted ? JSON.parse(decrypted) : {};
+    if (!decrypted) return {};
+    const tokens = JSON.parse(decrypted.text);
+    if (decrypted.legacy) {
+      saveTokens(tokens); // migrate to the authenticated format
+      console.log('[INFO] Migrated the token store to the current encryption format.');
+    }
+    return tokens;
   } catch (e) {
     console.error('[WARNING] Failed to parse tokens file:', e.message);
     return {};
