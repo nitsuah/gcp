@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - The dashboard (`apps/public/app.js`) HTML-escapes account emails, message headers and snippets, Gemini output and console messages before rendering them (shared `escapeHtml` helper in `apps/public/escape.js`).
-- `apps/Dockerfile` no longer copies `.env` into the image (configuration is passed at runtime, e.g. `docker run --env-file .env`), and `apps/.dockerignore` excludes `.env*` and `client_secrets.json` from the build context. `apps/` gains a `npm test` script (`node --test`).
+- `apps/Dockerfile` no longer copies `.env` into the image (configuration is passed at runtime, e.g. `docker run --env-file .env`), and `apps/.dockerignore` excludes `.env*` and `client_secret*.json` (including in subdirectories) from the build context; `ENCRYPTION_KEY` is documented as a runtime variable. `apps/` gains a `npm test` script (`node --test`).
 - `apps/server.js` no longer falls back to a hard-coded token-encryption key: `ENCRYPTION_KEY` is required and the server exits at startup if it is missing (demo mode, with no OAuth credentials, uses a clearly marked dev-only key). Tokens encrypted with the old default key cannot be read with a new key, so linked accounts must be re-authorized. Demo mode now stores its mock tokens in `data/tokens.demo.json`, leaving `data/tokens.json` untouched.
 
 ### Changed

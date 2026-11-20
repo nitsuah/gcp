@@ -7,6 +7,9 @@ COPY package*.json ./
 
 RUN npm ci --omit=dev
 
+# Runtime configuration (not baked into the image): pass ENCRYPTION_KEY (required), the OAuth
+# client settings and any other variables from apps/.env.example with `docker run --env-file .env`.
+
 # Copy application source (configuration is supplied at runtime via environment variables)
 COPY server.js ./
 COPY public/ ./public/
