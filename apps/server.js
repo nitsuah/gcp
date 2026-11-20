@@ -23,12 +23,15 @@ let usingDemoKey = false;
 const ENCRYPTION_SECRET = resolveEncryptionSecret();
 // Demo mode gets its own store so it can never overwrite real tokens encrypted with the real key
 const TOKENS_FILE = path.join(DATA_DIR, usingDemoKey ? 'tokens.demo.json' : 'tokens.json');
-// Current format: "v2:<salt>:<iv>:<tag>:<ciphertext>" (hex) using AES-256-GCM with a per-file
-// scrypt-derived key. Files written by earlier versions (AES-256-CBC, unsalted SHA-256 key) are
-// still readable and are re-written in the current format on first load.
+// Current format: "v2:<salt>:<iv>:<tag>:<ciphertext>" (hex) using AES-256-GCM with a per-write
+// salt and a scrypt-derived key. Files written by earlier versions (AES-256-CBC, unsalted SHA-256 key) are
+// still readable and are re-written in the current format on first load. Once a store has been
+// written in the current format a marker file is created next to it and legacy data is refused,
+// so removing the "v2:" prefix cannot downgrade the store.
 const FORMAT_PREFIX = 'v2:';
 const SALT_LENGTH = 16;
 const GCM_IV_LENGTH = 12;
+const GCM_TAG_LENGTH = 16;
 const LEGACY_KEY = crypto.createHash('sha256').update(ENCRYPTION_SECRET).digest();
 const derivedKeys = new Map();
 
@@ -70,7 +73,7 @@ let configState = {
 function encrypt(text) {
   const salt = crypto.randomBytes(SALT_LENGTH);
   const iv = crypto.randomBytes(GCM_IV_LENGTH);
-  const cipher = crypto.createCipheriv('aes-256-gcm', deriveKey(salt), iv);
+  const cipher = crypto.createCipheriv('aes-256-gcm', deriveKey(salt), iv, { authTagLength: GCM_TAG_LENGTH });
   const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return ['v2', salt.toString('hex'), iv.toString('hex'), tag.toString('hex'), encrypted.toString('hex')].join(':');
@@ -83,8 +86,14 @@ function decrypt(text) {
   try {
     if (text.startsWith(FORMAT_PREFIX)) {
       const [, saltHex, ivHex, tagHex, dataHex] = text.trim().split(':');
-      const decipher = crypto.createDecipheriv('aes-256-gcm', deriveKey(Buffer.from(saltHex, 'hex')), Buffer.from(ivHex, 'hex'));
-      decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+      const salt = Buffer.from(saltHex || '', 'hex');
+      const iv = Buffer.from(ivHex || '', 'hex');
+      const tag = Buffer.from(tagHex || '', 'hex');
+      if (salt.length !== SALT_LENGTH || iv.length !== GCM_IV_LENGTH || tag.length !== GCM_TAG_LENGTH) {
+        throw new Error('malformed encrypted data');
+      }
+      const decipher = crypto.createDecipheriv('aes-256-gcm', deriveKey(salt), iv, { authTagLength: GCM_TAG_LENGTH });
+      decipher.setAuthTag(tag);
       const plain = Buffer.concat([decipher.update(Buffer.from(dataHex, 'hex')), decipher.final()]);
       return { text: plain.toString('utf8'), legacy: false };
     }
@@ -102,43 +111,63 @@ function decrypt(text) {
 }
 
 /**
+ * Marker written next to the store once it is in the current format (disables legacy reads)
+ */
+function markerFile() {
+  return TOKENS_FILE + '.v2';
+}
+
+/**
  * Load tokens from encrypted file
  */
 function loadTokens() {
   if (!fs.existsSync(TOKENS_FILE)) {
     return {};
   }
+  let tokens;
+  let legacy;
   try {
     const encryptedData = fs.readFileSync(TOKENS_FILE, 'utf8');
     if (!encryptedData.trim()) return {};
+    if (!encryptedData.startsWith(FORMAT_PREFIX) && fs.existsSync(markerFile())) {
+      console.error('[ERROR] Token store is not in the current format but was already migrated; refusing to read it.');
+      return {};
+    }
     const decrypted = decrypt(encryptedData);
     if (!decrypted) return {};
-    const tokens = JSON.parse(decrypted.text);
-    if (decrypted.legacy) {
-      saveTokens(tokens); // migrate to the authenticated format
-      console.log('[INFO] Migrated the token store to the current encryption format.');
-    }
-    return tokens;
+    tokens = JSON.parse(decrypted.text);
+    legacy = decrypted.legacy;
   } catch (e) {
     console.error('[WARNING] Failed to parse tokens file:', e.message);
     return {};
   }
+  if (legacy) {
+    try {
+      saveTokens(tokens); // migrate to the authenticated format
+      console.log('[INFO] Migrated the token store to the current encryption format.');
+    } catch (e) {
+      console.error('[WARNING] Could not migrate the token store to the current format:', e.message);
+    }
+  }
+  return tokens;
 }
 
 /**
- * Save tokens to encrypted file
+ * Save tokens to encrypted file. The write is atomic (temp file + rename); errors are thrown.
  */
 function saveTokens(tokens) {
+  const dir = path.dirname(TOKENS_FILE);
+  fs.mkdirSync(dir, { recursive: true });
+  const encrypted = encrypt(JSON.stringify(tokens));
+  const tmp = `${TOKENS_FILE}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   try {
-    const dir = path.dirname(TOKENS_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    const encrypted = encrypt(JSON.stringify(tokens));
-    fs.writeFileSync(TOKENS_FILE, encrypted, 'utf8');
+    fs.writeFileSync(tmp, encrypted, { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(tmp, TOKENS_FILE);
   } catch (e) {
-    console.error('[ERROR] Failed to write tokens file:', e.message);
+    try { fs.unlinkSync(tmp); } catch (_) { /* nothing to clean up */ }
+    throw e;
   }
+  fs.writeFileSync(markerFile(), 'v2\n', { encoding: 'utf8', mode: 0o600 });
 }
 
 /**
@@ -220,7 +249,12 @@ function getAuthenticatedClient(email) {
         ...currentTokens[email],
         ...newTokens
       };
-      saveTokens(currentTokens);
+      try {
+        saveTokens(currentTokens);
+      } catch (e) {
+        console.error(`[ERROR] Failed to persist refreshed token for ${email}:`, e.message);
+        return;
+      }
       console.log(`[INFO] Access token refreshed and saved automatically for ${email}`);
     }
   });

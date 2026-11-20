@@ -7,6 +7,8 @@ const path = require('path');
 const { startServer } = require('./helpers');
 
 const KEY = 'test-encryption-key-for-unit-tests-only';
+// Real-credential fixtures: the real (non-demo) token store is tokens.json.
+const REAL = { ENCRYPTION_KEY: KEY, GOOGLE_CLIENT_ID: 'test-client.apps.example', GOOGLE_CLIENT_SECRET: 'test-secret' };
 const TOKENS = { 'person@example.com': { access_token: 'secret-access-value', refresh_token: 'secret-refresh-value', expiry_date: 1 } };
 
 // The format used by earlier versions, kept here to build fixtures.
@@ -17,68 +19,83 @@ function legacyEncrypt(text, secret) {
   return iv.toString('hex') + ':' + Buffer.concat([cipher.update(text), cipher.final()]).toString('hex');
 }
 
-function tmpDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'gcp-store-'));
+function seededDir() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcp-store-'));
+  fs.writeFileSync(path.join(dir, 'tokens.json'), legacyEncrypt(JSON.stringify(TOKENS), KEY));
+  return dir;
 }
 
 async function accounts(base) {
   return (await (await fetch(`${base}/api/config`)).json()).connectedAccounts.map((a) => a.email);
 }
 
-test('new writes use the authenticated format and are not readable as plaintext', async (t) => {
-  const s = await startServer({ ENCRYPTION_KEY: KEY });
+// Starts against a legacy store, lets it migrate, and returns the directory.
+async function migratedDir() {
+  const dir = seededDir();
+  const s = await startServer({ ...REAL, DATA_DIR: dir });
+  assert.deepStrictEqual(await accounts(s.base), ['person@example.com']);
+  await s.stop();
+  return dir;
+}
+
+test('a legacy store is read and rewritten in the authenticated format', async (t) => {
+  const dir = seededDir();
+  const s = await startServer({ ...REAL, DATA_DIR: dir });
   t.after(() => s.stop());
-  await fetch(`${s.base}/oauth2callback?code=mock_demo_auth_code`);
-  const file = fs.readFileSync(path.join(s.dataDir, 'tokens.json'), 'utf8');
+  assert.deepStrictEqual(await accounts(s.base), ['person@example.com']);
+  assert.match(s.getOutput(), /Migrated the token store/);
+
+  const file = fs.readFileSync(path.join(dir, 'tokens.json'), 'utf8');
   const parts = file.split(':');
   assert.strictEqual(parts[0], 'v2');
   assert.strictEqual(parts.length, 5);
   assert.strictEqual(parts[1].length, 32); // 16-byte salt
   assert.strictEqual(parts[2].length, 24); // 12-byte GCM nonce
   assert.strictEqual(parts[3].length, 32); // 16-byte tag
-  assert.ok(!file.includes('mock_access_token'));
-  assert.strictEqual((await accounts(s.base)).length, 1);
-});
-
-test('a store written in the previous format is read and migrated', async (t) => {
-  const dir = tmpDir();
-  fs.writeFileSync(path.join(dir, 'tokens.json'), legacyEncrypt(JSON.stringify(TOKENS), KEY));
-  const s = await startServer({ ENCRYPTION_KEY: KEY, DATA_DIR: dir });
-  t.after(() => s.stop());
-  assert.deepStrictEqual(await accounts(s.base), ['person@example.com']);
-  const migrated = fs.readFileSync(path.join(dir, 'tokens.json'), 'utf8');
-  assert.ok(migrated.startsWith('v2:'));
-  assert.ok(!migrated.includes('secret-refresh-value'));
-  assert.deepStrictEqual(await accounts(s.base), ['person@example.com']);
+  assert.ok(!file.includes('secret-refresh-value'));
+  // Atomic write leaves no temporary files behind.
+  assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f.endsWith('.tmp')), []);
+  assert.ok(fs.existsSync(path.join(dir, 'tokens.json.v2')));
 });
 
 test('a migrated store survives a restart', async (t) => {
-  const dir = tmpDir();
-  fs.writeFileSync(path.join(dir, 'tokens.json'), legacyEncrypt(JSON.stringify(TOKENS), KEY));
-  const first = await startServer({ ENCRYPTION_KEY: KEY, DATA_DIR: dir });
-  await accounts(first.base);
-  await first.stop();
-  const second = await startServer({ ENCRYPTION_KEY: KEY, DATA_DIR: dir });
-  t.after(() => second.stop());
-  assert.deepStrictEqual(await accounts(second.base), ['person@example.com']);
+  const dir = await migratedDir();
+  const s = await startServer({ ...REAL, DATA_DIR: dir });
+  t.after(() => s.stop());
+  assert.deepStrictEqual(await accounts(s.base), ['person@example.com']);
+  assert.doesNotMatch(s.getOutput(), /Migrated the token store/);
 });
 
-test('tampered ciphertext and a wrong key are rejected', async (t) => {
-  const seed = await startServer({ ENCRYPTION_KEY: KEY });
-  await fetch(`${seed.base}/oauth2callback?code=mock_demo_auth_code`);
-  await seed.stop();
-  const file = path.join(seed.dataDir, 'tokens.json');
-  const good = fs.readFileSync(file, 'utf8');
+test('legacy data is refused once the store has been migrated', async (t) => {
+  const dir = await migratedDir();
+  // Simulate a downgrade: the store is replaced by data in the old format.
+  fs.writeFileSync(path.join(dir, 'tokens.json'), legacyEncrypt(JSON.stringify(TOKENS), KEY));
+  const s = await startServer({ ...REAL, DATA_DIR: dir });
+  t.after(() => s.stop());
+  assert.deepStrictEqual(await accounts(s.base), []);
+  assert.match(s.getOutput(), /refusing to read/);
+});
 
+test('tampered ciphertext, a short tag and a wrong key are rejected', async (t) => {
+  const dir = await migratedDir();
+  const file = path.join(dir, 'tokens.json');
+  const good = fs.readFileSync(file, 'utf8');
   const parts = good.split(':');
+
   const flipped = (parts[4][0] === '0' ? '1' : '0') + parts[4].slice(1);
   fs.writeFileSync(file, [...parts.slice(0, 4), flipped].join(':'));
-  const tampered = await startServer({ ENCRYPTION_KEY: KEY, DATA_DIR: seed.dataDir });
-  assert.deepStrictEqual(await accounts(tampered.base), []);
-  await tampered.stop();
+  let s = await startServer({ ...REAL, DATA_DIR: dir });
+  assert.deepStrictEqual(await accounts(s.base), []);
+  await s.stop();
+
+  fs.writeFileSync(file, [parts[0], parts[1], parts[2], parts[3].slice(0, 16), parts[4]].join(':'));
+  s = await startServer({ ...REAL, DATA_DIR: dir });
+  assert.deepStrictEqual(await accounts(s.base), []);
+  assert.match(s.getOutput(), /malformed encrypted data/);
+  await s.stop();
 
   fs.writeFileSync(file, good);
-  const wrongKey = await startServer({ ENCRYPTION_KEY: 'a-completely-different-key-value', DATA_DIR: seed.dataDir });
-  t.after(() => wrongKey.stop());
-  assert.deepStrictEqual(await accounts(wrongKey.base), []);
+  s = await startServer({ ...REAL, ENCRYPTION_KEY: 'a-completely-different-key-value', DATA_DIR: dir });
+  t.after(() => s.stop());
+  assert.deepStrictEqual(await accounts(s.base), []);
 });
