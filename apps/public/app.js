@@ -1,3 +1,23 @@
+// Dashboard session: when the API answers 401, ask for the access token once and retry.
+(function () {
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    let res = await originalFetch(input, init);
+    if (res.status === 401 && typeof input === 'string' && input.startsWith('/') && !input.startsWith('/auth/')) {
+      const token = window.prompt('Enter the access token (APP_AUTH_TOKEN, or the value printed by the server at startup):');
+      if (token) {
+        const login = await originalFetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token })
+        });
+        if (login.ok) res = await originalFetch(input, init);
+      }
+    }
+    return res;
+  };
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
   // UI Elements
   const credentialStatus = document.getElementById('credential-status');

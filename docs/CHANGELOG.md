@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `apps/server.js` now binds to `127.0.0.1` by default (`HOST` to change it) and requires an access token (`APP_AUTH_TOKEN`, or a one-time token printed at startup) for `/api/*`, `/connect-google` and `/oauth2callback`; the dashboard asks for it and keeps it in an HttpOnly session cookie. A non-loopback `HOST` without `APP_AUTH_TOKEN` is refused at startup, `APP_AUTH_DISABLED=1` is a loopback-only local-dev opt-out, and requests with an unexpected `Host` header are rejected. The container image sets `HOST=0.0.0.0`, so pass `APP_AUTH_TOKEN` and publish the port to loopback (`-p 127.0.0.1:3000:3000`).
 - `apps/server.js` no longer falls back to a hard-coded token-encryption key: `ENCRYPTION_KEY` is required and the server exits at startup if it is missing (demo mode, with no OAuth credentials, uses a clearly marked dev-only key). Tokens encrypted with the old default key cannot be read with a new key, so linked accounts must be re-authorized. Demo mode now stores its mock tokens in `data/tokens.demo.json`, leaving `data/tokens.json` untouched.
 
 ### Changed
