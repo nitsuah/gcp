@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- The Google sign-in flow now sends a random `state` (bound to the browser with an HttpOnly cookie, single use, 10 minute lifetime) and a PKCE `S256` challenge; `/oauth2callback` rejects requests whose state is missing, reused or does not match, and passes the code verifier on the token exchange.
 - `apps/server.js` no longer falls back to a hard-coded token-encryption key: `ENCRYPTION_KEY` is required and the server exits at startup if it is missing (demo mode, with no OAuth credentials, uses a clearly marked dev-only key). Tokens encrypted with the old default key cannot be read with a new key, so linked accounts must be re-authorized. Demo mode now stores its mock tokens in `data/tokens.demo.json`, leaving `data/tokens.json` untouched.
 
 ### Changed
