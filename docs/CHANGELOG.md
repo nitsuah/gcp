@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - The dashboard (`apps/public/app.js`) HTML-escapes account emails, message headers and snippets, Gemini output and console messages before rendering them (shared `escapeHtml` helper in `apps/public/escape.js`).
+- The token store in `apps/server.js` now uses AES-256-GCM (authenticated) with a per-write random salt and a scrypt-derived key; the 16-byte tag length is enforced. Existing `tokens.json` files written in the previous AES-256-CBC format are read and re-written in the new format automatically on first load, so no re-authorization is needed. After that, the old format is refused (marker file `tokens.json.v2`), and writes are atomic (temp file + rename) and report failures.
 - `apps/server.js` no longer falls back to a hard-coded token-encryption key: `ENCRYPTION_KEY` is required and the server exits at startup if it is missing (demo mode, with no OAuth credentials, uses a clearly marked dev-only key). Tokens encrypted with the old default key cannot be read with a new key, so linked accounts must be re-authorized. Demo mode now stores its mock tokens in `data/tokens.demo.json`, leaving `data/tokens.json` untouched.
 
 ### Changed
