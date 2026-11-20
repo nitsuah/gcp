@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (type === 'success') colorClass = 'style="color:#10b981;"';
     else if (type === 'api') colorClass = 'style="color:#a855f7;"';
 
-    consoleOutput.innerHTML += `\n<span ${colorClass}>${prefix}${message}</span>`;
+    consoleOutput.innerHTML += `\n<span ${colorClass}>${escapeHtml(prefix + message)}</span>`;
     consoleOutput.scrollTop = consoleOutput.scrollHeight;
   }
 
@@ -89,10 +89,10 @@ document.addEventListener('DOMContentLoaded', () => {
         card.className = 'account-card';
         card.innerHTML = `
           <div class="account-info">
-            <span class="account-email">${account.email}</span>
-            <span class="account-meta">Expires: ${dateStr}</span>
+            <span class="account-email">${escapeHtml(account.email)}</span>
+            <span class="account-meta">Expires: ${escapeHtml(dateStr)}</span>
           </div>
-          <button class="btn-danger-icon btn-disconnect" data-email="${account.email}" title="Disconnect Account">
+          <button class="btn-danger-icon btn-disconnect" data-email="${escapeHtml(account.email)}" title="Disconnect Account">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -235,7 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (response.ok && data.success) {
         logToConsole(`Retrieved ${data.messages.length} recent messages successfully:`, 'success');
         data.messages.forEach(msg => {
-          consoleOutput.innerHTML += `\n  - <strong>From:</strong> ${msg.from}\n    <strong>Subject:</strong> ${msg.subject}\n    <strong>Snippet:</strong> ${msg.snippet.substring(0, 75)}...`;
+          consoleOutput.innerHTML += `\n  - <strong>From:</strong> ${escapeHtml(msg.from)}\n    <strong>Subject:</strong> ${escapeHtml(msg.subject)}\n    <strong>Snippet:</strong> ${escapeHtml(String(msg.snippet || '').substring(0, 75))}...`;
         });
         consoleOutput.scrollTop = consoleOutput.scrollHeight;
       } else {
@@ -307,7 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (response.ok && data.success) {
         logToConsole('Gemini response retrieved successfully:', 'success');
-        consoleOutput.innerHTML += `\n<span style="color:#d1d5db; white-space:pre-wrap;">${data.response}</span>\n`;
+        consoleOutput.innerHTML += `\n<span style="color:#d1d5db; white-space:pre-wrap;">${escapeHtml(data.response)}</span>\n`;
         consoleOutput.scrollTop = consoleOutput.scrollHeight;
       } else {
         logToConsole(`Gemini API Error: ${data.error || 'Unknown error'}`, 'error');
