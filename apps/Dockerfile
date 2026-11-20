@@ -7,10 +7,9 @@ COPY package*.json ./
 
 RUN npm ci --omit=dev
 
-# Copy application source
+# Copy application source (configuration is supplied at runtime via environment variables)
 COPY server.js ./
 COPY public/ ./public/
-COPY .env ./
 
 # Create data directory for encrypted token store
 RUN mkdir -p data
