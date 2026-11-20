@@ -22,7 +22,8 @@ const DEMO_ENCRYPTION_SECRET = 'DEV-ONLY-demo-mode-key-do-not-use-for-real-token
 let usingDemoKey = false;
 const ENCRYPTION_SECRET = resolveEncryptionSecret();
 // Demo mode gets its own store so mock tokens never mix with (or overwrite) real tokens,
-// whichever encryption key is in use. Resolved per call because demo mode depends on the credentials found.
+// whichever encryption key is in use. Intentionally resolved on every call (not cached at startup):
+// demo mode follows the credentials currently found, so a store is never picked from stale state.
 function tokensFile() {
   return path.join(DATA_DIR, isDemoModeActive() ? 'tokens.demo.json' : 'tokens.json');
 }
