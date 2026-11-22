@@ -3,3 +3,14 @@ node_modules
 data/
 *.log
 .env.local
+.env
+.env.*
+.env*
+**/.env
+**/.env*
+!.env.example
+client_secrets.json
+client_secret*.json
+**/client_secrets.json
+**/client_secret*.json
+test/

@@ -180,6 +180,15 @@ What it does:
 **Prerequisites:** [gcloud CLI](https://cloud.google.com/sdk/docs/install) on `PATH` and
 an active GCP billing account.
 
+## Dashboard in Docker (`apps/`)
+
+The dashboard image does not contain any `.env` file or credentials. Supply configuration at
+runtime, for example `docker run --env-file apps/.env -p 3000:3000 <image>`. `ENCRYPTION_KEY` is
+required (it encrypts stored OAuth tokens); see `apps/.env.example` for the other variables.
+Write the values in that file **without quotes**: `--env-file` passes them literally, so
+`ENCRYPTION_KEY="abc"` would include the quote characters (a different key than a local run,
+where dotenv strips them).
+
 ## Outputs
 
 - [![Assessment-1](https://badgen.net/badge/assessment-1/VALIDATED/green?icon=github)](https://github.com/nitsuah/gcp/blob/main/outputs/assessment-1.csv)
