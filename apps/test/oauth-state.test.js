@@ -2,10 +2,14 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { startServer } = require('./helpers');
 
-const REAL = { GOOGLE_CLIENT_ID: 'test-client.apps.example', GOOGLE_CLIENT_SECRET: 'test-secret' };
+const TOKEN = 'test-access-token-0123456789';
+const REAL = { GOOGLE_CLIENT_ID: 'test-client.apps.example', GOOGLE_CLIENT_SECRET: 'test-secret', APP_AUTH_TOKEN: TOKEN };
+// The OAuth routes require the access token; send it so these tests exercise the state checks.
+const authed = (url, init = {}) =>
+  fetch(url, { ...init, headers: { Authorization: `Bearer ${TOKEN}`, ...(init.headers || {}) } });
 
 async function begin(base) {
-  const res = await fetch(`${base}/connect-google`, { redirect: 'manual' });
+  const res = await authed(`${base}/connect-google`, { redirect: 'manual' });
   assert.strictEqual(res.status, 302);
   const url = new URL(res.headers.get('location'));
   const cookie = res.headers.get('set-cookie').split(';')[0];
@@ -41,10 +45,10 @@ test('callback rejects missing, mismatched and unbound state', async (t) => {
   const { url, cookie } = await begin(s.base);
   const state = url.searchParams.get('state');
 
-  assert.strictEqual((await fetch(`${s.base}/oauth2callback?code=abc`)).status, 400);
-  assert.strictEqual((await fetch(`${s.base}/oauth2callback?code=abc&state=${'0'.repeat(64)}`, { headers: { Cookie: cookie } })).status, 400);
+  assert.strictEqual((await authed(`${s.base}/oauth2callback?code=abc`)).status, 400);
+  assert.strictEqual((await authed(`${s.base}/oauth2callback?code=abc&state=${'0'.repeat(64)}`, { headers: { Cookie: cookie } })).status, 400);
   // Correct state but without the browser-bound cookie (e.g. a link opened by someone else).
-  assert.strictEqual((await fetch(`${s.base}/oauth2callback?code=abc&state=${state}`)).status, 400);
+  assert.strictEqual((await authed(`${s.base}/oauth2callback?code=abc&state=${state}`)).status, 400);
 });
 
 test('state is single use', async (t) => {
@@ -54,24 +58,24 @@ test('state is single use', async (t) => {
   const state = url.searchParams.get('state');
   const target = `${s.base}/oauth2callback?code=abc&state=${state}`;
 
-  const first = await fetch(target, { headers: { Cookie: cookie } });
+  const first = await authed(target, { headers: { Cookie: cookie } });
   assert.notStrictEqual(first.status, 400, 'a valid state proceeds to the token exchange');
-  const second = await fetch(target, { headers: { Cookie: cookie } });
+  const second = await authed(target, { headers: { Cookie: cookie } });
   assert.strictEqual(second.status, 400);
 });
 
 test('the demo code does not skip the state check outside demo mode', async (t) => {
   const s = await startServer(REAL);
   t.after(() => s.stop());
-  assert.strictEqual((await fetch(`${s.base}/oauth2callback?code=mock_demo_auth_code`)).status, 400);
+  assert.strictEqual((await authed(`${s.base}/oauth2callback?code=mock_demo_auth_code`)).status, 400);
 });
 
 test('demo mode still links a mock account without state', async (t) => {
-  const s = await startServer({});
+  const s = await startServer({ APP_AUTH_TOKEN: TOKEN });
   t.after(() => s.stop());
-  const start = await fetch(`${s.base}/connect-google`, { redirect: 'manual' });
+  const start = await authed(`${s.base}/connect-google`, { redirect: 'manual' });
   assert.strictEqual(start.status, 302);
-  const done = await fetch(new URL(start.headers.get('location'), s.base));
+  const done = await authed(new URL(start.headers.get('location'), s.base));
   assert.strictEqual(done.status, 200);
   assert.match(await done.text(), /Demo Mode/);
 });
