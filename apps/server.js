@@ -9,6 +9,12 @@ const dotenv = require('dotenv');
 dotenv.config({ quiet: true });
 
 const app = express();
+// Behind a TLS-terminating proxy, set TRUST_PROXY (e.g. 1 or loopback) so
+// req.secure reflects X-Forwarded-Proto and the session cookie gets Secure.
+if (process.env.TRUST_PROXY) {
+  const tp = process.env.TRUST_PROXY;
+  app.set('trust proxy', /^\d+$/.test(tp) ? Number(tp) : tp);
+}
 const PORT = process.env.PORT || 3000;
 // Bind to loopback by default; set HOST explicitly to expose the service on another interface.
 const HOST = process.env.HOST || '127.0.0.1';
@@ -62,7 +68,12 @@ function parseCookies(header) {
   const out = {};
   for (const part of (header || '').split(';')) {
     const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i <= 0) continue;
+    try {
+      out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    } catch {
+      // Malformed percent-encoding: skip this cookie rather than fail the request.
+    }
   }
   return out;
 }

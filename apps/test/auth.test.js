@@ -82,3 +82,22 @@ test('unexpected Host headers are rejected on a loopback bind', async (t) => {
   const good = await request(s.base, '/api/config', { headers: { ...headers, Host: `localhost:${s.port}` } });
   assert.strictEqual(good.status, 200);
 });
+
+test('a malformed cookie is ignored instead of failing the request', async (t) => {
+  const s = await startServer({ APP_AUTH_TOKEN: TOKEN });
+  t.after(() => s.stop());
+  const res = await fetch(`${s.base}/api/config`, { headers: { Cookie: 'junk=%GG; other=1' } });
+  assert.strictEqual(res.status, 401);
+});
+
+test('TRUST_PROXY marks the session cookie Secure behind a TLS proxy', async (t) => {
+  const s = await startServer({ APP_AUTH_TOKEN: TOKEN, TRUST_PROXY: 'loopback' });
+  t.after(() => s.stop());
+  const res = await fetch(`${s.base}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https' },
+    body: JSON.stringify({ token: TOKEN }),
+  });
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers.get('set-cookie'), /;\s*Secure/i);
+});
