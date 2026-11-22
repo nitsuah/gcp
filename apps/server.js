@@ -132,9 +132,30 @@ const ENCRYPTION_SECRET = resolveEncryptionSecret();
 function tokensFile() {
   return path.join(DATA_DIR, isDemoModeActive() ? 'tokens.demo.json' : 'tokens.json');
 }
-// Hash the encryption key to ensure it is exactly 32 bytes
-const ENCRYPTION_KEY = crypto.createHash('sha256').update(ENCRYPTION_SECRET).digest();
-const IV_LENGTH = 16;
+// Current format: "v2:<salt>:<iv>:<tag>:<ciphertext>" (hex) using AES-256-GCM with a per-write
+// salt and a scrypt-derived key. Files written by earlier versions (AES-256-CBC, unsalted SHA-256 key) are
+// still readable and are re-written in the current format on first load. Once a store has been
+// written in the current format a marker file is created next to it and legacy data is refused,
+// so removing the "v2:" prefix cannot downgrade the store.
+const FORMAT_PREFIX = 'v2:';
+const SALT_LENGTH = 16;
+const GCM_IV_LENGTH = 12;
+const GCM_TAG_LENGTH = 16;
+const LEGACY_KEY = crypto.createHash('sha256').update(ENCRYPTION_SECRET).digest();
+// Pinned so the v2 format does not depend on Node's defaults. Changing these
+// needs a new format prefix, since existing stores were derived with them.
+const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
+const derivedKeys = new Map();
+
+function deriveKey(salt) {
+  const id = salt.toString('hex');
+  if (!derivedKeys.has(id)) {
+    // Small bounded cache: evict the oldest salt (Map keeps insertion order).
+    if (derivedKeys.size >= 8) derivedKeys.delete(derivedKeys.keys().next().value);
+    derivedKeys.set(id, crypto.scryptSync(ENCRYPTION_SECRET, salt, 32, SCRYPT_PARAMS));
+  }
+  return derivedKeys.get(id);
+}
 
 /**
  * Returns the secret used to encrypt stored OAuth tokens.
@@ -160,28 +181,42 @@ let configState = {
 };
 
 /**
- * Encrypt data using AES-256-CBC
+ * Encrypt data using AES-256-GCM (authenticated) with a salted scrypt-derived key
  */
 function encrypt(text) {
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
-  let encrypted = cipher.update(text);
-  encrypted = Buffer.concat([encrypted, cipher.final()]);
-  return iv.toString('hex') + ':' + encrypted.toString('hex');
+  const salt = crypto.randomBytes(SALT_LENGTH);
+  const iv = crypto.randomBytes(GCM_IV_LENGTH);
+  const cipher = crypto.createCipheriv('aes-256-gcm', deriveKey(salt), iv, { authTagLength: GCM_TAG_LENGTH });
+  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ['v2', salt.toString('hex'), iv.toString('hex'), tag.toString('hex'), encrypted.toString('hex')].join(':');
 }
 
 /**
- * Decrypt data using AES-256-CBC
+ * Decrypt data. Returns { text, legacy } or null when the data cannot be authenticated/decrypted.
  */
 function decrypt(text) {
   try {
+    if (text.startsWith(FORMAT_PREFIX)) {
+      const [, saltHex, ivHex, tagHex, dataHex] = text.trim().split(':');
+      const salt = Buffer.from(saltHex || '', 'hex');
+      const iv = Buffer.from(ivHex || '', 'hex');
+      const tag = Buffer.from(tagHex || '', 'hex');
+      if (salt.length !== SALT_LENGTH || iv.length !== GCM_IV_LENGTH || tag.length !== GCM_TAG_LENGTH) {
+        throw new Error('malformed encrypted data');
+      }
+      const decipher = crypto.createDecipheriv('aes-256-gcm', deriveKey(salt), iv, { authTagLength: GCM_TAG_LENGTH });
+      decipher.setAuthTag(tag);
+      const plain = Buffer.concat([decipher.update(Buffer.from(dataHex, 'hex')), decipher.final()]);
+      return { text: plain.toString('utf8'), legacy: false };
+    }
+    // Legacy AES-256-CBC format: "<iv>:<ciphertext>"
     const textParts = text.split(':');
     const iv = Buffer.from(textParts.shift(), 'hex');
     const encryptedText = Buffer.from(textParts.join(':'), 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
-    let decrypted = decipher.update(encryptedText);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-    return decrypted.toString();
+    const decipher = crypto.createDecipheriv('aes-256-cbc', LEGACY_KEY, iv);
+    const plain = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
+    return { text: plain.toString('utf8'), legacy: true };
   } catch (e) {
     console.error('[ERROR] Decryption of tokens failed:', e.message);
     return null;
@@ -189,37 +224,91 @@ function decrypt(text) {
 }
 
 /**
- * Load tokens from encrypted file
+ * Marker written next to the store once it is in the current format (disables legacy reads)
  */
-function loadTokens() {
-  if (!fs.existsSync(tokensFile())) {
-    return {};
-  }
-  try {
-    const encryptedData = fs.readFileSync(tokensFile(), 'utf8');
-    if (!encryptedData.trim()) return {};
-    const decrypted = decrypt(encryptedData);
-    return decrypted ? JSON.parse(decrypted) : {};
-  } catch (e) {
-    console.error('[WARNING] Failed to parse tokens file:', e.message);
-    return {};
-  }
+function markerFile() {
+  return tokensFile() + '.v2';
 }
 
 /**
- * Save tokens to encrypted file
+ * Load tokens from encrypted file
+ */
+// Stores that exist but could not be read. saveTokens refuses to overwrite
+// them, so a refused or damaged store is never replaced by a near-empty one.
+const unreadableStores = new Set();
+
+function loadTokens() {
+  const file = tokensFile();
+  if (!fs.existsSync(file)) {
+    unreadableStores.delete(file);
+    return {};
+  }
+  let tokens;
+  let legacy;
+  try {
+    const encryptedData = fs.readFileSync(file, 'utf8');
+    if (!encryptedData.trim()) {
+      unreadableStores.delete(file);
+      return {};
+    }
+    if (!encryptedData.startsWith(FORMAT_PREFIX) && fs.existsSync(markerFile())) {
+      console.error('[ERROR] Token store is not in the current format but was already migrated; refusing to read it.');
+      unreadableStores.add(file);
+      return {};
+    }
+    const decrypted = decrypt(encryptedData);
+    if (!decrypted) {
+      unreadableStores.add(file);
+      return {};
+    }
+    tokens = JSON.parse(decrypted.text);
+    legacy = decrypted.legacy;
+  } catch (e) {
+    console.error('[WARNING] Failed to parse tokens file:', e.message);
+    unreadableStores.add(file);
+    return {};
+  }
+  unreadableStores.delete(file);
+  if (!legacy && !fs.existsSync(markerFile())) {
+    // A v2 store without its marker (e.g. the marker write failed after a
+    // migration): restore the marker so legacy data stays refused.
+    try {
+      fs.writeFileSync(markerFile(), 'v2\n', { encoding: 'utf8', mode: 0o600 });
+    } catch (e) {
+      console.error('[WARNING] Could not write the token store marker:', e.message);
+    }
+  }
+  if (legacy) {
+    try {
+      saveTokens(tokens); // migrate to the authenticated format
+      console.log('[INFO] Migrated the token store to the current encryption format.');
+    } catch (e) {
+      console.error('[WARNING] Could not migrate the token store to the current format:', e.message);
+    }
+  }
+  return tokens;
+}
+
+/**
+ * Save tokens to encrypted file. The write is atomic (temp file + rename); errors are thrown.
  */
 function saveTokens(tokens) {
-  try {
-    const dir = path.dirname(tokensFile());
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    const encrypted = encrypt(JSON.stringify(tokens));
-    fs.writeFileSync(tokensFile(), encrypted, 'utf8');
-  } catch (e) {
-    console.error('[ERROR] Failed to write tokens file:', e.message);
+  const file = tokensFile();
+  if (unreadableStores.has(file)) {
+    throw new Error('The token store exists but could not be read; not overwriting it. Move it aside to start over.');
   }
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true });
+  const encrypted = encrypt(JSON.stringify(tokens));
+  const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tmp, encrypted, { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch (_) { /* nothing to clean up */ }
+    throw e;
+  }
+  fs.writeFileSync(markerFile(), 'v2\n', { encoding: 'utf8', mode: 0o600 });
 }
 
 /**
@@ -307,7 +396,12 @@ function getAuthenticatedClient(email) {
         ...currentTokens[email],
         ...newTokens
       };
-      saveTokens(currentTokens);
+      try {
+        saveTokens(currentTokens);
+      } catch (e) {
+        console.error(`[ERROR] Failed to persist refreshed token for ${email}:`, e.message);
+        return;
+      }
       console.log(`[INFO] Access token refreshed and saved automatically for ${email}`);
     }
   });
