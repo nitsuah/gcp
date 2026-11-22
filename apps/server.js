@@ -38,7 +38,8 @@ const derivedKeys = new Map();
 function deriveKey(salt) {
   const id = salt.toString('hex');
   if (!derivedKeys.has(id)) {
-    if (derivedKeys.size >= 8) derivedKeys.clear();
+    // Small bounded cache: evict the oldest salt (Map keeps insertion order).
+    if (derivedKeys.size >= 8) derivedKeys.delete(derivedKeys.keys().next().value);
     derivedKeys.set(id, crypto.scryptSync(ENCRYPTION_SECRET, salt, 32));
   }
   return derivedKeys.get(id);
