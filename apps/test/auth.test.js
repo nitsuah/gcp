@@ -116,3 +116,21 @@ test('repeated failed logins from one address are throttled', async (t) => {
   const right = await fetch(`${s.base}/auth/login`, { method: 'POST', headers, body: JSON.stringify({ token: TOKEN }) });
   assert.strictEqual(right.status, 429);
 });
+
+test('a non-loopback bind still rejects unexpected Host headers', async (t) => {
+  const s = await startServer({ APP_AUTH_TOKEN: TOKEN, HOST: '0.0.0.0' });
+  t.after(() => s.stop());
+  const headers = { Authorization: `Bearer ${TOKEN}` };
+  const bad = await request(s.base, '/api/config', { headers: { ...headers, Host: 'evil.example' } });
+  assert.strictEqual(bad.status, 403);
+  const local = await request(s.base, '/api/config', { headers: { ...headers, Host: `localhost:${s.port}` } });
+  assert.strictEqual(local.status, 200);
+});
+
+test('ALLOWED_HOSTS admits a configured host name on a non-loopback bind', async (t) => {
+  const s = await startServer({ APP_AUTH_TOKEN: TOKEN, HOST: '0.0.0.0', ALLOWED_HOSTS: 'dash.example' });
+  t.after(() => s.stop());
+  const headers = { Authorization: `Bearer ${TOKEN}` };
+  const ok = await request(s.base, '/api/config', { headers: { ...headers, Host: 'dash.example' } });
+  assert.strictEqual(ok.status, 200);
+});

@@ -1,6 +1,7 @@
 const express = require('express');
 const { google } = require('googleapis');
 const crypto = require('crypto');
+const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
@@ -91,16 +92,28 @@ function requireAuth(req, res, next) {
   res.status(401).json({ error: 'Authentication required' });
 }
 
-// Only answer requests addressed to a host name we expect (guards against DNS rebinding).
+// Only answer requests addressed to a host name we expect (guards against DNS
+// rebinding). ALLOWED_HOSTS adds names; without it, a non-loopback bind accepts
+// this machine's own host name and interface addresses besides loopback.
+function machineHostNames() {
+  const names = [os.hostname().toLowerCase()];
+  for (const addrs of Object.values(os.networkInterfaces())) {
+    for (const a of addrs || []) {
+      names.push(a.family === 'IPv6' || a.family === 6 ? `[${a.address.toLowerCase()}]` : a.address);
+    }
+  }
+  return names;
+}
+const configuredHosts = (process.env.ALLOWED_HOSTS || '').split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
 const ALLOWED_HOSTS = new Set([
   ...LOOPBACK_HOSTS,
-  ...(process.env.ALLOWED_HOSTS || '').split(',').map(h => h.trim().toLowerCase()).filter(Boolean)
+  ...configuredHosts,
+  ...(!isLoopbackBind && !configuredHosts.length ? machineHostNames() : [])
 ]);
 function hostCheck(req, res, next) {
-  if (!isLoopbackBind && !process.env.ALLOWED_HOSTS) return next();
   const host = (req.get('host') || '').toLowerCase().replace(/:\d+$/, '');
   if (ALLOWED_HOSTS.has(host)) return next();
-  res.status(403).json({ error: 'Host not allowed' });
+  res.status(403).json({ error: 'Host not allowed. Add the host name clients use to ALLOWED_HOSTS.' });
 }
 
 app.use(hostCheck);
