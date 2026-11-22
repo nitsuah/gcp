@@ -547,8 +547,47 @@ app.post('/api/config/drive-logging', (req, res) => {
   res.json({ success: true, driveLoggingEnabled: configState.driveLoggingEnabled });
 });
 
+// Pending authorization requests: state -> { codeVerifier, expires }. Single use, short lived.
+const OAUTH_STATE_COOKIE = 'oauth_state';
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+const pendingAuth = new Map();
+const MAX_PENDING_AUTH = 100;
+
+// Drops expired flows; called when a flow starts and when one completes.
+function prunePendingAuth(now = Date.now()) {
+  for (const [key, entry] of pendingAuth) {
+    if (entry.expires <= now) pendingAuth.delete(key);
+  }
+}
+
+function readCookie(req, name) {
+  for (const part of (req.get('cookie') || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return '';
+}
+
+function sameValue(a, b) {
+  const ha = crypto.createHash('sha256').update(String(a)).digest();
+  const hb = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+/** Validates and consumes the state for a callback; returns the stored entry or null. */
+function consumeAuthState(req) {
+  prunePendingAuth();
+  const state = req.query.state;
+  const bound = readCookie(req, OAUTH_STATE_COOKIE);
+  if (typeof state !== 'string' || !state || !bound || !sameValue(state, bound)) return null;
+  const entry = pendingAuth.get(state);
+  if (!entry) return null;
+  pendingAuth.delete(state);
+  return entry;
+}
+
 // OAuth connection initialization route
-app.get('/connect-google', (req, res) => {
+app.get('/connect-google', async (req, res) => {
   const isDemo = isDemoModeActive();
   if (isDemo) {
     // In demo mode, bypass Google and redirect to callback with a demo code
@@ -575,10 +614,28 @@ app.get('/connect-google', (req, res) => {
     'https://www.googleapis.com/auth/drive.file'
   ];
 
+  // Bind the flow to this browser (state + cookie) and to this server (PKCE).
+  const state = crypto.randomBytes(32).toString('hex');
+  const { codeVerifier, codeChallenge } = await oauth2Client.generateCodeVerifierAsync();
+  prunePendingAuth();
+  // Bounded: abandoned flows cannot grow the map; the oldest one is dropped.
+  if (pendingAuth.size >= MAX_PENDING_AUTH) pendingAuth.delete(pendingAuth.keys().next().value);
+  pendingAuth.set(state, { codeVerifier, expires: Date.now() + OAUTH_STATE_TTL_MS });
+  res.cookie(OAUTH_STATE_COOKIE, state, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: req.secure,
+    maxAge: OAUTH_STATE_TTL_MS,
+    path: '/oauth2callback'
+  });
+
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline', // crucial for receiving the refresh token
     prompt: 'consent',     // forces consent to guarantee refresh token is returned
-    scope: scopes
+    scope: scopes,
+    state,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256'
   });
 
   res.redirect(url);
@@ -587,6 +644,8 @@ app.get('/connect-google', (req, res) => {
 // OAuth 2.0 Redirect Callback URL
 app.get('/oauth2callback', async (req, res) => {
   const { code } = req.query;
+  // Only demo mode may take the mock path; a magic code alone must not skip
+  // the state check below.
   const isDemo = isDemoModeActive();
 
   if (isDemo) {
@@ -632,6 +691,14 @@ app.get('/oauth2callback', async (req, res) => {
     return res.status(500).send('Client credentials not configured.');
   }
 
+  const pending = consumeAuthState(req);
+  res.clearCookie(OAUTH_STATE_COOKIE, { path: '/oauth2callback' });
+  if (!pending) {
+    return res.status(400).send('Invalid or expired authorization state. Start the connection again from the dashboard.');
+  }
+  if (typeof code !== 'string' || !code) {
+    return res.status(400).send('Authorization was not completed.');
+  }
 
   try {
     const oauth2Client = new google.auth.OAuth2(
@@ -641,7 +708,7 @@ app.get('/oauth2callback', async (req, res) => {
     );
 
     // Exchange auth code for tokens
-    const { tokens } = await oauth2Client.getToken(code);
+    const { tokens } = await oauth2Client.getToken({ code, codeVerifier: pending.codeVerifier });
     oauth2Client.setCredentials(tokens);
 
     // Call userinfo endpoint to identify which account just logged in

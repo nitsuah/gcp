@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- The Google sign-in flow now sends a random `state` (bound to the browser with an HttpOnly cookie, single use, 10 minute lifetime) and a PKCE `S256` challenge; `/oauth2callback` rejects requests whose state is missing, reused or does not match, and passes the code verifier on the token exchange.
 - `apps/server.js` now binds to `127.0.0.1` by default (`HOST` to change it) and requires an access token (`APP_AUTH_TOKEN`, or a one-time token printed at startup) for `/api/*`, `/connect-google` and `/oauth2callback`; the dashboard asks for it and keeps it in an HttpOnly session cookie. A non-loopback `HOST` without `APP_AUTH_TOKEN` is refused at startup, `APP_AUTH_DISABLED=1` is a loopback-only local-dev opt-out, and requests with an unexpected `Host` header are rejected. The container image sets `HOST=0.0.0.0`, so pass `APP_AUTH_TOKEN` and publish the port to loopback (`-p 127.0.0.1:3000:3000`).
 - The dashboard (`apps/public/app.js`) HTML-escapes account emails, message headers and snippets, Gemini output and console messages before rendering them (shared `escapeHtml` helper in `apps/public/escape.js`).
 - `apps/Dockerfile` no longer copies `.env` into the image (configuration is passed at runtime, e.g. `docker run --env-file .env`), and `apps/.dockerignore` excludes `.env*` and `client_secret*.json` (including in subdirectories) from the build context; `ENCRYPTION_KEY` is documented as a runtime variable. `apps/test/docker.test.js` checks both.
