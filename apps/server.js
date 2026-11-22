@@ -403,6 +403,14 @@ app.post('/api/config/drive-logging', (req, res) => {
 const OAUTH_STATE_COOKIE = 'oauth_state';
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const pendingAuth = new Map();
+const MAX_PENDING_AUTH = 100;
+
+// Drops expired flows; called when a flow starts and when one completes.
+function prunePendingAuth(now = Date.now()) {
+  for (const [key, entry] of pendingAuth) {
+    if (entry.expires <= now) pendingAuth.delete(key);
+  }
+}
 
 function readCookie(req, name) {
   for (const part of (req.get('cookie') || '').split(';')) {
@@ -420,10 +428,7 @@ function sameValue(a, b) {
 
 /** Validates and consumes the state for a callback; returns the stored entry or null. */
 function consumeAuthState(req) {
-  const now = Date.now();
-  for (const [key, entry] of pendingAuth) {
-    if (entry.expires <= now) pendingAuth.delete(key);
-  }
+  prunePendingAuth();
   const state = req.query.state;
   const bound = readCookie(req, OAUTH_STATE_COOKIE);
   if (typeof state !== 'string' || !state || !bound || !sameValue(state, bound)) return null;
@@ -464,6 +469,9 @@ app.get('/connect-google', async (req, res) => {
   // Bind the flow to this browser (state + cookie) and to this server (PKCE).
   const state = crypto.randomBytes(32).toString('hex');
   const { codeVerifier, codeChallenge } = await oauth2Client.generateCodeVerifierAsync();
+  prunePendingAuth();
+  // Bounded: abandoned flows cannot grow the map; the oldest one is dropped.
+  if (pendingAuth.size >= MAX_PENDING_AUTH) pendingAuth.delete(pendingAuth.keys().next().value);
   pendingAuth.set(state, { codeVerifier, expires: Date.now() + OAUTH_STATE_TTL_MS });
   res.cookie(OAUTH_STATE_COOKIE, state, {
     httpOnly: true,
