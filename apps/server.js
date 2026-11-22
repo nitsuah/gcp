@@ -128,26 +128,50 @@ function markerFile() {
 /**
  * Load tokens from encrypted file
  */
+// Stores that exist but could not be read. saveTokens refuses to overwrite
+// them, so a refused or damaged store is never replaced by a near-empty one.
+const unreadableStores = new Set();
+
 function loadTokens() {
-  if (!fs.existsSync(tokensFile())) {
+  const file = tokensFile();
+  if (!fs.existsSync(file)) {
+    unreadableStores.delete(file);
     return {};
   }
   let tokens;
   let legacy;
   try {
-    const encryptedData = fs.readFileSync(tokensFile(), 'utf8');
-    if (!encryptedData.trim()) return {};
+    const encryptedData = fs.readFileSync(file, 'utf8');
+    if (!encryptedData.trim()) {
+      unreadableStores.delete(file);
+      return {};
+    }
     if (!encryptedData.startsWith(FORMAT_PREFIX) && fs.existsSync(markerFile())) {
       console.error('[ERROR] Token store is not in the current format but was already migrated; refusing to read it.');
+      unreadableStores.add(file);
       return {};
     }
     const decrypted = decrypt(encryptedData);
-    if (!decrypted) return {};
+    if (!decrypted) {
+      unreadableStores.add(file);
+      return {};
+    }
     tokens = JSON.parse(decrypted.text);
     legacy = decrypted.legacy;
   } catch (e) {
     console.error('[WARNING] Failed to parse tokens file:', e.message);
+    unreadableStores.add(file);
     return {};
+  }
+  unreadableStores.delete(file);
+  if (!legacy && !fs.existsSync(markerFile())) {
+    // A v2 store without its marker (e.g. the marker write failed after a
+    // migration): restore the marker so legacy data stays refused.
+    try {
+      fs.writeFileSync(markerFile(), 'v2\n', { encoding: 'utf8', mode: 0o600 });
+    } catch (e) {
+      console.error('[WARNING] Could not write the token store marker:', e.message);
+    }
   }
   if (legacy) {
     try {
@@ -165,6 +189,9 @@ function loadTokens() {
  */
 function saveTokens(tokens) {
   const file = tokensFile();
+  if (unreadableStores.has(file)) {
+    throw new Error('The token store exists but could not be read; not overwriting it. Move it aside to start over.');
+  }
   const dir = path.dirname(file);
   fs.mkdirSync(dir, { recursive: true });
   const encrypted = encrypt(JSON.stringify(tokens));

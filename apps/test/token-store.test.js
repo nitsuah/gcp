@@ -33,9 +33,22 @@ async function accounts(base) {
 async function migratedDir() {
   const dir = seededDir();
   const s = await startServer({ ...REAL, DATA_DIR: dir });
-  assert.deepStrictEqual(await accounts(s.base), ['person@example.com']);
-  await s.stop();
+  try {
+    assert.deepStrictEqual(await accounts(s.base), ['person@example.com']);
+  } finally {
+    await s.stop();
+  }
   return dir;
+}
+
+// Runs fn against a server and always stops it, even if an assertion fails.
+async function withServer(env, fn) {
+  const s = await startServer(env);
+  try {
+    return await fn(s);
+  } finally {
+    await s.stop();
+  }
 }
 
 test('a legacy store is read and rewritten in the authenticated format', async (t) => {
@@ -84,18 +97,33 @@ test('tampered ciphertext, a short tag and a wrong key are rejected', async (t) 
 
   const flipped = (parts[4][0] === '0' ? '1' : '0') + parts[4].slice(1);
   fs.writeFileSync(file, [...parts.slice(0, 4), flipped].join(':'));
-  let s = await startServer({ ...REAL, DATA_DIR: dir });
-  assert.deepStrictEqual(await accounts(s.base), []);
-  await s.stop();
+  await withServer({ ...REAL, DATA_DIR: dir }, async (s) => {
+    assert.deepStrictEqual(await accounts(s.base), []);
+  });
 
   fs.writeFileSync(file, [parts[0], parts[1], parts[2], parts[3].slice(0, 16), parts[4]].join(':'));
-  s = await startServer({ ...REAL, DATA_DIR: dir });
-  assert.deepStrictEqual(await accounts(s.base), []);
-  assert.match(s.getOutput(), /malformed encrypted data/);
-  await s.stop();
+  await withServer({ ...REAL, DATA_DIR: dir }, async (s) => {
+    assert.deepStrictEqual(await accounts(s.base), []);
+    assert.match(s.getOutput(), /malformed encrypted data/);
+  });
 
   fs.writeFileSync(file, good);
-  s = await startServer({ ...REAL, ENCRYPTION_KEY: 'a-completely-different-key-value', DATA_DIR: dir });
-  t.after(() => s.stop());
-  assert.deepStrictEqual(await accounts(s.base), []);
+  await withServer({ ...REAL, ENCRYPTION_KEY: 'a-completely-different-key-value', DATA_DIR: dir }, async (s) => {
+    assert.deepStrictEqual(await accounts(s.base), []);
+  });
+});
+
+test('a missing marker is restored after a successful read', async () => {
+  const dir = await migratedDir();
+  const marker = path.join(dir, 'tokens.json.v2');
+  fs.rmSync(marker);
+  await withServer({ ...REAL, DATA_DIR: dir }, async (s) => {
+    assert.deepStrictEqual(await accounts(s.base), ['person@example.com']);
+  });
+  assert.ok(fs.existsSync(marker), 'marker recreated');
+  // ...so a later downgrade is refused again.
+  fs.writeFileSync(path.join(dir, 'tokens.json'), legacyEncrypt(JSON.stringify(TOKENS), KEY));
+  await withServer({ ...REAL, DATA_DIR: dir }, async (s) => {
+    assert.deepStrictEqual(await accounts(s.base), []);
+  });
 });
