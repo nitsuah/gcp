@@ -59,3 +59,19 @@ test('state is single use', async (t) => {
   const second = await fetch(target, { headers: { Cookie: cookie } });
   assert.strictEqual(second.status, 400);
 });
+
+test('the demo code does not skip the state check outside demo mode', async (t) => {
+  const s = await startServer(REAL);
+  t.after(() => s.stop());
+  assert.strictEqual((await fetch(`${s.base}/oauth2callback?code=mock_demo_auth_code`)).status, 400);
+});
+
+test('demo mode still links a mock account without state', async (t) => {
+  const s = await startServer({});
+  t.after(() => s.stop());
+  const start = await fetch(`${s.base}/connect-google`, { redirect: 'manual' });
+  assert.strictEqual(start.status, 302);
+  const done = await fetch(new URL(start.headers.get('location'), s.base));
+  assert.strictEqual(done.status, 200);
+  assert.match(await done.text(), /Demo Mode/);
+});

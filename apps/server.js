@@ -384,7 +384,9 @@ app.get('/connect-google', async (req, res) => {
 // OAuth 2.0 Redirect Callback URL
 app.get('/oauth2callback', async (req, res) => {
   const { code } = req.query;
-  const isDemo = isDemoModeActive() || code === 'mock_demo_auth_code';
+  // Only demo mode may take the mock path; a magic code alone must not skip
+  // the state check below.
+  const isDemo = isDemoModeActive();
 
   if (isDemo) {
     const randomId = Math.floor(Math.random() * 900) + 100;
