@@ -21,8 +21,12 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DEMO_ENCRYPTION_SECRET = 'DEV-ONLY-demo-mode-key-do-not-use-for-real-tokens';
 let usingDemoKey = false;
 const ENCRYPTION_SECRET = resolveEncryptionSecret();
-// Demo mode gets its own store so it can never overwrite real tokens encrypted with the real key
-const TOKENS_FILE = path.join(DATA_DIR, usingDemoKey ? 'tokens.demo.json' : 'tokens.json');
+// Demo mode gets its own store so mock tokens never mix with (or overwrite) real tokens,
+// whichever encryption key is in use. Intentionally resolved on every call (not cached at startup):
+// demo mode follows the credentials currently found, so a store is never picked from stale state.
+function tokensFile() {
+  return path.join(DATA_DIR, isDemoModeActive() ? 'tokens.demo.json' : 'tokens.json');
+}
 // Current format: "v2:<salt>:<iv>:<tag>:<ciphertext>" (hex) using AES-256-GCM with a per-write
 // salt and a scrypt-derived key. Files written by earlier versions (AES-256-CBC, unsalted SHA-256 key) are
 // still readable and are re-written in the current format on first load. Once a store has been
@@ -115,20 +119,20 @@ function decrypt(text) {
  * Marker written next to the store once it is in the current format (disables legacy reads)
  */
 function markerFile() {
-  return TOKENS_FILE + '.v2';
+  return tokensFile() + '.v2';
 }
 
 /**
  * Load tokens from encrypted file
  */
 function loadTokens() {
-  if (!fs.existsSync(TOKENS_FILE)) {
+  if (!fs.existsSync(tokensFile())) {
     return {};
   }
   let tokens;
   let legacy;
   try {
-    const encryptedData = fs.readFileSync(TOKENS_FILE, 'utf8');
+    const encryptedData = fs.readFileSync(tokensFile(), 'utf8');
     if (!encryptedData.trim()) return {};
     if (!encryptedData.startsWith(FORMAT_PREFIX) && fs.existsSync(markerFile())) {
       console.error('[ERROR] Token store is not in the current format but was already migrated; refusing to read it.');
@@ -157,13 +161,14 @@ function loadTokens() {
  * Save tokens to encrypted file. The write is atomic (temp file + rename); errors are thrown.
  */
 function saveTokens(tokens) {
-  const dir = path.dirname(TOKENS_FILE);
+  const file = tokensFile();
+  const dir = path.dirname(file);
   fs.mkdirSync(dir, { recursive: true });
   const encrypted = encrypt(JSON.stringify(tokens));
-  const tmp = `${TOKENS_FILE}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   try {
     fs.writeFileSync(tmp, encrypted, { encoding: 'utf8', mode: 0o600 });
-    fs.renameSync(tmp, TOKENS_FILE);
+    fs.renameSync(tmp, file);
   } catch (e) {
     try { fs.unlinkSync(tmp); } catch (_) { /* nothing to clean up */ }
     throw e;
@@ -217,6 +222,12 @@ function isDemoModeActive() {
   return false;
 }
 
+/**
+ * Mock/demo data is only served in demo mode; with real credentials every account goes through Google.
+ */
+function isDemoAccount(email) {
+  return isDemoModeActive() && typeof email === 'string' && email.startsWith('demo-');
+}
 
 /**
  * Create separate OAuth client for a specific account email
@@ -398,7 +409,7 @@ app.get('/connect-google', (req, res) => {
 // OAuth 2.0 Redirect Callback URL
 app.get('/oauth2callback', async (req, res) => {
   const { code } = req.query;
-  const isDemo = isDemoModeActive() || code === 'mock_demo_auth_code';
+  const isDemo = isDemoModeActive();
 
   if (isDemo) {
     const randomId = Math.floor(Math.random() * 900) + 100;
@@ -529,7 +540,7 @@ app.post('/api/accounts/disconnect', (req, res) => {
 app.get('/api/gmail/list', async (req, res) => {
   const { email } = req.query;
   try {
-    if (email && email.startsWith('demo-')) {
+    if (isDemoAccount(email)) {
       await new Promise(r => setTimeout(r, 600)); // Simulate API latency
       const mockMessages = [
         { id: 'msg-001', from: 'Google Cloud Billing <billing-alerts@google.com>', subject: 'Budget Alert: 50% Threshold Reached', snippet: 'Project ws-auth-5712 has exceeded 50% of the allocated budget ($25.00 of $50.00)...' },
@@ -583,7 +594,7 @@ app.get('/api/gmail/list', async (req, res) => {
 app.post('/api/calendar/create', async (req, res) => {
   const { email, summary, description, startDateTime, endDateTime } = req.body;
   try {
-    if (email && email.startsWith('demo-')) {
+    if (isDemoAccount(email)) {
       await new Promise(r => setTimeout(r, 600));
       console.log(`[DEMO MODE] Intercepted Calendar event insert for: ${email}`);
       return res.json({
@@ -633,7 +644,7 @@ app.post('/api/calendar/create', async (req, res) => {
 app.post('/api/gemini/query', async (req, res) => {
   const { email, prompt } = req.body;
   try {
-    if (email && email.startsWith('demo-')) {
+    if (isDemoAccount(email)) {
       await new Promise(r => setTimeout(r, 800));
       console.log(`[DEMO MODE] Intercepted Gemini API query for: ${email}`);
       let simulatedResponse = `**Simulated Gemini 1.5 Flash Model response** (Demo Sandbox Mode):\n\nYour prompt: *"${prompt}"*\n\nBecause this workspace is running in Local Demo Mode, this response is simulated locally. Once a valid \`client_secrets.json\` is loaded and a live Google Workspace account is authorized, the application will invoke the Generative Language API using your account's secure OAuth access token.`;
@@ -694,7 +705,7 @@ app.post('/api/gemini/query', async (req, res) => {
 app.post('/api/drive/log', async (req, res) => {
   const { email, logMessage } = req.body;
   try {
-    if (email && email.startsWith('demo-')) {
+    if (isDemoAccount(email)) {
       console.log(`[DEMO MODE] Intercepted Drive logging for: ${email}`);
       console.log(`[DRIVE MOCK LOG] Content: "${logMessage}"`);
       return res.json({ success: true, fileId: 'mock_drive_file_id_571288' });
