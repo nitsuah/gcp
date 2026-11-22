@@ -37,6 +37,9 @@ const SALT_LENGTH = 16;
 const GCM_IV_LENGTH = 12;
 const GCM_TAG_LENGTH = 16;
 const LEGACY_KEY = crypto.createHash('sha256').update(ENCRYPTION_SECRET).digest();
+// Pinned so the v2 format does not depend on Node's defaults. Changing these
+// needs a new format prefix, since existing stores were derived with them.
+const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 const derivedKeys = new Map();
 
 function deriveKey(salt) {
@@ -44,7 +47,7 @@ function deriveKey(salt) {
   if (!derivedKeys.has(id)) {
     // Small bounded cache: evict the oldest salt (Map keeps insertion order).
     if (derivedKeys.size >= 8) derivedKeys.delete(derivedKeys.keys().next().value);
-    derivedKeys.set(id, crypto.scryptSync(ENCRYPTION_SECRET, salt, 32));
+    derivedKeys.set(id, crypto.scryptSync(ENCRYPTION_SECRET, salt, 32, SCRYPT_PARAMS));
   }
   return derivedKeys.get(id);
 }
