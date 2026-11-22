@@ -101,3 +101,18 @@ test('TRUST_PROXY marks the session cookie Secure behind a TLS proxy', async (t)
   assert.strictEqual(res.status, 200);
   assert.match(res.headers.get('set-cookie'), /;\s*Secure/i);
 });
+
+test('repeated failed logins from one address are throttled', async (t) => {
+  const s = await startServer({ APP_AUTH_TOKEN: TOKEN });
+  t.after(() => s.stop());
+  const headers = { 'Content-Type': 'application/json' };
+  const statuses = [];
+  for (let i = 0; i < 11; i++) {
+    statuses.push((await fetch(`${s.base}/auth/login`, { method: 'POST', headers, body: JSON.stringify({ token: 'wrong-token-value' }) })).status);
+  }
+  assert.deepStrictEqual(statuses.slice(0, 10), Array(10).fill(401));
+  assert.strictEqual(statuses[10], 429);
+  // Even the right token waits out the window.
+  const right = await fetch(`${s.base}/auth/login`, { method: 'POST', headers, body: JSON.stringify({ token: TOKEN }) });
+  assert.strictEqual(right.status, 429);
+});
