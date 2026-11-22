@@ -1,6 +1,7 @@
 const express = require('express');
 const { google } = require('googleapis');
 const crypto = require('crypto');
+const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
@@ -9,10 +10,157 @@ const dotenv = require('dotenv');
 dotenv.config({ quiet: true });
 
 const app = express();
+// Behind a TLS-terminating proxy, set TRUST_PROXY (e.g. 1 or loopback) so
+// req.secure reflects X-Forwarded-Proto and the session cookie gets Secure.
+if (process.env.TRUST_PROXY) {
+  const tp = process.env.TRUST_PROXY;
+  app.set('trust proxy', /^\d+$/.test(tp) ? Number(tp) : tp);
+}
 const PORT = process.env.PORT || 3000;
+// Bind to loopback by default; set HOST explicitly to expose the service on another interface.
+const HOST = process.env.HOST || '127.0.0.1';
 
+// ==========================================
+//          Access control configuration
+// ==========================================
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+const isLoopbackBind = LOOPBACK_HOSTS.has(HOST);
+// APP_AUTH_DISABLED=1 is a local-dev opt-out and is only honoured on a loopback bind.
+const authDisabled = process.env.APP_AUTH_DISABLED === '1';
+let generatedAuthToken = false;
+const AUTH_TOKEN = resolveAuthToken();
+const SESSION_COOKIE = 'ws_session';
+const SESSION_VALUE = AUTH_TOKEN
+  ? crypto.createHmac('sha256', AUTH_TOKEN).update('workspace-engine-session').digest('hex')
+  : '';
+
+function resolveAuthToken() {
+  if (authDisabled) {
+    if (!isLoopbackBind) {
+      console.error('[FATAL] APP_AUTH_DISABLED=1 is only allowed when HOST is a loopback address.');
+      process.exit(1);
+    }
+    console.warn('[WARNING] APP_AUTH_DISABLED=1: access control is off (loopback only).');
+    return '';
+  }
+  const configured = process.env.APP_AUTH_TOKEN;
+  if (configured) {
+    if (configured.length < 16) {
+      console.error('[FATAL] APP_AUTH_TOKEN must be at least 16 characters.');
+      process.exit(1);
+    }
+    return configured;
+  }
+  if (!isLoopbackBind) {
+    console.error('[FATAL] APP_AUTH_TOKEN is required when HOST is not a loopback address.');
+    process.exit(1);
+  }
+  generatedAuthToken = true;
+  return crypto.randomBytes(24).toString('hex');
+}
+
+function safeEqual(a, b) {
+  const ha = crypto.createHash('sha256').update(String(a)).digest();
+  const hb = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+function parseCookies(header) {
+  const out = {};
+  for (const part of (header || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i <= 0) continue;
+    try {
+      out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    } catch {
+      // Malformed percent-encoding: skip this cookie rather than fail the request.
+    }
+  }
+  return out;
+}
+
+function isAuthenticated(req) {
+  if (authDisabled) return true;
+  const bearer = /^Bearer (.+)$/.exec(req.get('authorization') || '');
+  if (bearer && safeEqual(bearer[1], AUTH_TOKEN)) return true;
+  const cookie = parseCookies(req.get('cookie'))[SESSION_COOKIE];
+  return !!cookie && safeEqual(cookie, SESSION_VALUE);
+}
+
+function requireAuth(req, res, next) {
+  if (isAuthenticated(req)) return next();
+  res.status(401).json({ error: 'Authentication required' });
+}
+
+// Only answer requests addressed to a host name we expect (guards against DNS
+// rebinding). ALLOWED_HOSTS adds names; without it, a non-loopback bind accepts
+// this machine's own host name and interface addresses besides loopback.
+function machineHostNames() {
+  const names = [os.hostname().toLowerCase()];
+  for (const addrs of Object.values(os.networkInterfaces())) {
+    for (const a of addrs || []) {
+      names.push(a.family === 'IPv6' || a.family === 6 ? `[${a.address.toLowerCase()}]` : a.address);
+    }
+  }
+  return names;
+}
+const configuredHosts = (process.env.ALLOWED_HOSTS || '').split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+const ALLOWED_HOSTS = new Set([
+  ...LOOPBACK_HOSTS,
+  ...configuredHosts,
+  ...(!isLoopbackBind && !configuredHosts.length ? machineHostNames() : [])
+]);
+function hostCheck(req, res, next) {
+  const host = (req.get('host') || '').toLowerCase().replace(/:\d+$/, '');
+  if (ALLOWED_HOSTS.has(host)) return next();
+  res.status(403).json({ error: 'Host not allowed. Add the host name clients use to ALLOWED_HOSTS.' });
+}
+
+app.use(hostCheck);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Exchange the access token for a session cookie (used by the dashboard).
+// Failed login attempts per client address: at most LOGIN_MAX_FAILURES per
+// LOGIN_WINDOW_MS, so a short configured token cannot be brute-forced.
+const LOGIN_MAX_FAILURES = 10;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const loginFailures = new Map();
+
+function loginBlocked(ip, now) {
+  const entry = loginFailures.get(ip);
+  if (!entry || now - entry.start >= LOGIN_WINDOW_MS) return false;
+  return entry.count >= LOGIN_MAX_FAILURES;
+}
+
+function recordLoginFailure(ip, now) {
+  const entry = loginFailures.get(ip);
+  if (!entry || now - entry.start >= LOGIN_WINDOW_MS) {
+    if (loginFailures.size >= 10000) loginFailures.clear(); // bound memory
+    loginFailures.set(ip, { start: now, count: 1 });
+  } else {
+    entry.count += 1;
+  }
+}
+
+app.post('/auth/login', (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  if (!authDisabled && loginBlocked(ip, now)) {
+    res.set('Retry-After', String(Math.ceil(LOGIN_WINDOW_MS / 1000)));
+    return res.status(429).json({ error: 'Too many failed attempts. Try again later.' });
+  }
+  const supplied = req.body && req.body.token;
+  if (authDisabled || (typeof supplied === 'string' && safeEqual(supplied, AUTH_TOKEN))) {
+    loginFailures.delete(ip);
+    res.cookie(SESSION_COOKIE, SESSION_VALUE, { httpOnly: true, sameSite: 'lax', path: '/', secure: req.secure });
+    return res.json({ success: true });
+  }
+  recordLoginFailure(ip, now);
+  res.status(401).json({ error: 'Invalid token' });
+});
+
+app.use(['/api', '/connect-google', '/oauth2callback'], requireAuth);
 
 // Secure Local Token Storage Configuration
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -816,8 +964,13 @@ app.post('/api/drive/log', async (req, res) => {
 });
 
 // Start Server
-app.listen(PORT, () => {
-  console.log(`[SERVER] Multi-Account Workspace Engine listening on http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`[SERVER] Multi-Account Workspace Engine listening on http://${HOST}:${PORT}`);
+  if (generatedAuthToken) {
+    console.log('[AUTH] APP_AUTH_TOKEN not set. Generated a one-time access token for this run:');
+    console.log(`[AUTH]   ${AUTH_TOKEN}`);
+    console.log('[AUTH] Set APP_AUTH_TOKEN in apps/.env to use a stable token.');
+  }
   const creds = getOAuthCredentials();
   if (!creds) {
     console.log('[WARNING] client_secrets.json not found in search paths.');

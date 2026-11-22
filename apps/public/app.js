@@ -1,3 +1,30 @@
+// Dashboard session: when the API answers 401, ask for the access token once and retry.
+(function () {
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    const res = await originalFetch(input, init);
+    if (res.status !== 401 || typeof input !== 'string' || !input.startsWith('/') || input.startsWith('/auth/')) {
+      return res;
+    }
+    // Never hand a 401 to the caller: sign in (up to three tries), or fail loudly.
+    let message = 'Enter the access token (APP_AUTH_TOKEN, or the value printed by the server at startup):';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const token = window.prompt(message);
+      if (!token) break;
+      const login = await originalFetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+      if (login.ok) return originalFetch(input, init);
+      const detail = await login.json().catch(() => ({}));
+      if (login.status === 429) throw new Error(detail.error || 'Too many failed attempts. Try again later.');
+      message = 'That token was not accepted. Try again:';
+    }
+    throw new Error('Not signed in. Reload the page to enter the access token.');
+  };
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
   // UI Elements
   const credentialStatus = document.getElementById('credential-status');
@@ -203,7 +230,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Connect Account Button - triggers OAuth Redirect
-  btnConnect.addEventListener('click', () => {
+  btnConnect.addEventListener('click', async () => {
     if (!hasCredentials && !isDemoMode) {
       logToConsole('Cannot connect: Local client_secrets.json is missing or incomplete.', 'error');
       alert('Please configure GCP credentials first! Check client_secrets.json directions in the console.');
@@ -213,6 +240,15 @@ document.addEventListener('DOMContentLoaded', () => {
       logToConsole('GCP credentials missing. Launching Connection in Local Demo Sandbox...', 'warning');
     } else {
       logToConsole('Initiating OAuth authorization redirection flow...', 'info');
+    }
+    // Make sure this browser is signed in first: a plain navigation cannot
+    // show the login prompt if the session expired.
+    try {
+      const check = await fetch('/api/config');
+      if (!check.ok) throw new Error(`HTTP ${check.status}`);
+    } catch (err) {
+      logToConsole(`Cannot connect: ${err.message}`, 'error');
+      return;
     }
     window.location.href = '/connect-google';
   });

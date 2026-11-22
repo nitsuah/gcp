@@ -8,7 +8,8 @@ const { startServer } = require('./helpers');
 
 const KEY = 'test-encryption-key-for-unit-tests-only';
 // Real-credential fixtures: the real (non-demo) token store is tokens.json.
-const REAL = { ENCRYPTION_KEY: KEY, GOOGLE_CLIENT_ID: 'test-client.apps.example', GOOGLE_CLIENT_SECRET: 'test-secret' };
+const AUTH = 'test-access-token-0123456789';
+const REAL = { ENCRYPTION_KEY: KEY, GOOGLE_CLIENT_ID: 'test-client.apps.example', GOOGLE_CLIENT_SECRET: 'test-secret', APP_AUTH_TOKEN: AUTH };
 const TOKENS = { 'person@example.com': { access_token: 'secret-access-value', refresh_token: 'secret-refresh-value', expiry_date: 1 } };
 
 // The format used by earlier versions, kept here to build fixtures.
@@ -26,7 +27,8 @@ function seededDir() {
 }
 
 async function accounts(base) {
-  return (await (await fetch(`${base}/api/config`)).json()).connectedAccounts.map((a) => a.email);
+  const res = await fetch(`${base}/api/config`, { headers: { Authorization: `Bearer ${AUTH}` } });
+  return (await res.json()).connectedAccounts.map((a) => a.email);
 }
 
 // Starts against a legacy store, lets it migrate, and returns the directory.
