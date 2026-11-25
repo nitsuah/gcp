@@ -891,16 +891,17 @@ app.post('/api/calendar/create', async (req, res) => {
 // Test Gemini Prompt via User's OAuth Credentials
 app.post('/api/gemini/query', async (req, res) => {
   const { email, prompt } = req.body;
+  const promptText = typeof prompt === 'string' ? prompt : '';
   try {
     if (isDemoAccount(email)) {
       await new Promise(r => setTimeout(r, 800));
       console.log(`[DEMO MODE] Intercepted Gemini API query for: ${email}`);
-      let simulatedResponse = `**Simulated Gemini 1.5 Flash Model response** (Demo Sandbox Mode):\n\nYour prompt: *"${prompt}"*\n\nBecause this workspace is running in Local Demo Mode, this response is simulated locally. Once a valid \`client_secrets.json\` is loaded and a live Google Workspace account is authorized, the application will invoke the Generative Language API using your account's secure OAuth access token.`;
-      
-      if (prompt.toLowerCase().includes('moon')) {
+      let simulatedResponse = `**Simulated Gemini 1.5 Flash Model response** (Demo Sandbox Mode):\n\nYour prompt: *"${promptText}"*\n\nBecause this workspace is running in Local Demo Mode, this response is simulated locally. Once a valid \`client_secrets.json\` is loaded and a live Google Workspace account is authorized, the application will invoke the Generative Language API using your account's secure OAuth access token.`;
+
+      if (promptText.toLowerCase().includes('moon')) {
         simulatedResponse = `**Simulated Gemini 1.5 Flash**:\n\nThe average distance from the Earth to the Moon is approximately **384,400 kilometers** (about **238,855 miles**). Since the Moon travels in an elliptical orbit, the actual distance varies from 363,300 km at perigee (closest approach) to 405,500 km at apogee (farthest distance).`;
       }
-      
+
       return res.json({ success: true, response: simulatedResponse });
     }
 
@@ -915,7 +916,7 @@ app.post('/api/gemini/query', async (req, res) => {
     // Call the Google Generative Language API using the user's OAuth access token
     // Standard model endpoints: gemini-1.5-flash
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
-    
+
     // We import dynamically or use Node's native fetch (which exists in v22.x)
     const response = await fetch(url, {
       method: 'POST',
@@ -925,13 +926,13 @@ app.post('/api/gemini/query', async (req, res) => {
       },
       body: JSON.stringify({
         contents: [{
-          parts: [{ text: prompt || "Say Hello in a premium developer style!" }]
+          parts: [{ text: promptText || "Say Hello in a premium developer style!" }]
         }]
       })
     });
 
     const data = await response.json();
-    
+
     if (!response.ok) {
       throw new Error(data.error?.message || 'Error communicating with Generative Language API');
     }
@@ -939,7 +940,7 @@ app.post('/api/gemini/query', async (req, res) => {
     const outputText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response text received.';
 
     if (configState.driveLoggingEnabled) {
-      await logToGoogleDrive(email, `Executed Gemini prompt: "${prompt.substring(0, 30)}..."`);
+      await logToGoogleDrive(email, `Executed Gemini prompt: "${promptText.substring(0, 30)}..."`);
     }
 
     res.json({ success: true, response: outputText });
