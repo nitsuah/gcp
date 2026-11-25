@@ -358,7 +358,10 @@ function saveTokens(tokens) {
  * Find and load client secrets
  */
 function getOAuthCredentials() {
-  const paths = [
+  // An explicit path is an exclusive override, allowing tests and deployments
+  // to select a credential source without probing developer-local secret files.
+  const configuredPath = process.env.GOOGLE_CLIENT_SECRETS_PATH;
+  const paths = configuredPath ? [configuredPath] : [
     path.join(__dirname, 'client_secrets.json'),
     path.join(__dirname, '..', 'gcp', 'client_secrets.json'),
     path.join(__dirname, '..', '..', 'code', 'gcp', 'client_secrets.json'),

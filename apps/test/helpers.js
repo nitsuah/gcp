@@ -22,6 +22,8 @@ function spawnServer(env) {
     PATH: process.env.PATH,
     DATA_DIR: dataDir,
     ENCRYPTION_KEY: 'test-encryption-key-for-unit-tests-only',
+    // Keep every spawned test server out of developer-local OAuth credentials.
+    GOOGLE_CLIENT_SECRETS_PATH: path.join(dataDir, 'missing-client-secrets.json'),
     ...env
   };
   for (const k of Object.keys(merged)) if (merged[k] === undefined) delete merged[k];

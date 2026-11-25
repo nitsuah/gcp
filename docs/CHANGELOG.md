@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added (Q4 2026)
 
+- **Tests for accounts-config endpoints** (`apps/test/accounts-config.test.js`): covers `POST /api/config/drive-logging` (enable/disable, missing body), `POST /api/accounts/disconnect` (404 for unknown, remove linked demo account, idempotent second disconnect), and auth requirement on both routes.
 - **Duplicate-detection report** (`--duplicate-report`): recursively scans the source and
   destination folder trees and writes `outputs/duplicate-report.csv` listing files with
   identical name and byte size found in both — useful for spotting redundant copies before
