@@ -16,6 +16,7 @@ RUN npm ci --omit=dev
 
 # Copy application source (configuration is supplied at runtime via environment variables)
 COPY server.js ./
+COPY lib/ ./lib/
 COPY public/ ./public/
 
 # Create data directory for encrypted token store

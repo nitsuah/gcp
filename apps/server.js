@@ -5,6 +5,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
+const { safeEqual, parseCookies, readCookie } = require('./lib/http-utils');
 
 // Load environment variables
 dotenv.config({ quiet: true });
@@ -57,26 +58,6 @@ function resolveAuthToken() {
   }
   generatedAuthToken = true;
   return crypto.randomBytes(24).toString('hex');
-}
-
-function safeEqual(a, b) {
-  const ha = crypto.createHash('sha256').update(String(a)).digest();
-  const hb = crypto.createHash('sha256').update(String(b)).digest();
-  return crypto.timingSafeEqual(ha, hb);
-}
-
-function parseCookies(header) {
-  const out = {};
-  for (const part of (header || '').split(';')) {
-    const i = part.indexOf('=');
-    if (i <= 0) continue;
-    try {
-      out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
-    } catch {
-      // Malformed percent-encoding: skip this cookie rather than fail the request.
-    }
-  }
-  return out;
 }
 
 function isAuthenticated(req) {
@@ -563,26 +544,12 @@ function prunePendingAuth(now = Date.now()) {
   }
 }
 
-function readCookie(req, name) {
-  for (const part of (req.get('cookie') || '').split(';')) {
-    const i = part.indexOf('=');
-    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
-  }
-  return '';
-}
-
-function sameValue(a, b) {
-  const ha = crypto.createHash('sha256').update(String(a)).digest();
-  const hb = crypto.createHash('sha256').update(String(b)).digest();
-  return crypto.timingSafeEqual(ha, hb);
-}
-
 /** Validates and consumes the state for a callback; returns the stored entry or null. */
 function consumeAuthState(req) {
   prunePendingAuth();
   const state = req.query.state;
   const bound = readCookie(req, OAUTH_STATE_COOKIE);
-  if (typeof state !== 'string' || !state || !bound || !sameValue(state, bound)) return null;
+  if (typeof state !== 'string' || !state || !bound || !safeEqual(state, bound)) return null;
   const entry = pendingAuth.get(state);
   if (!entry) return null;
   pendingAuth.delete(state);
