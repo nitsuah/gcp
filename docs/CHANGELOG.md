@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Extracted the login failure limiter from server.js into apps/lib/login-limiter.js with unit tests; no behaviour change.
 - Extracted cookie parsing and constant-time comparison from server.js into apps/lib/http-utils.js with unit tests; no behaviour change.
 - Dependencies: `requirements.txt` sets floors on the transitive `certifi` (>=2026.10.18), `protobuf` (>=5.29.6) and `idna` (>=3.15) so no resolver picks a release with PYSEC-2026-4320, PYSEC-2026-1805 or PYSEC-2026-215; the repo-health workflow uses the shared kit at `a0df883`, whose own lockfile no longer carries the stale `msgpack` advisory.
 - Dependencies: `pandas` 3.1.1 on Python 3.11+ (Python 3.10 stays on 2.3.3 through an environment marker, since pandas 3 needs 3.11) and `google-api-python-client` 2.202.0. In `apps/`, `express` 4 → 5.3, `dotenv` 16 → 18 (loaded with `quiet: true` to keep startup output unchanged) and `googleapis` 189 → 190. `pip-audit` and `npm audit` report no known vulnerabilities.
