@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
 const { safeEqual, parseCookies, readCookie } = require('./lib/http-utils');
+const { createLoginLimiter } = require('./lib/login-limiter');
 
 // Load environment variables
 dotenv.config({ quiet: true });
@@ -102,42 +103,23 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Exchange the access token for a session cookie (used by the dashboard).
-// Failed login attempts per client address: at most LOGIN_MAX_FAILURES per
-// LOGIN_WINDOW_MS, so a short configured token cannot be brute-forced.
-const LOGIN_MAX_FAILURES = 10;
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const loginFailures = new Map();
-
-function loginBlocked(ip, now) {
-  const entry = loginFailures.get(ip);
-  if (!entry || now - entry.start >= LOGIN_WINDOW_MS) return false;
-  return entry.count >= LOGIN_MAX_FAILURES;
-}
-
-function recordLoginFailure(ip, now) {
-  const entry = loginFailures.get(ip);
-  if (!entry || now - entry.start >= LOGIN_WINDOW_MS) {
-    if (loginFailures.size >= 10000) loginFailures.clear(); // bound memory
-    loginFailures.set(ip, { start: now, count: 1 });
-  } else {
-    entry.count += 1;
-  }
-}
+// Failed login attempts are limited per client address (see lib/login-limiter.js).
+const loginLimiter = createLoginLimiter();
 
 app.post('/auth/login', (req, res) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
-  if (!authDisabled && loginBlocked(ip, now)) {
-    res.set('Retry-After', String(Math.ceil(LOGIN_WINDOW_MS / 1000)));
+  if (!authDisabled && loginLimiter.blocked(ip, now)) {
+    res.set('Retry-After', String(Math.ceil(loginLimiter.windowMs / 1000)));
     return res.status(429).json({ error: 'Too many failed attempts. Try again later.' });
   }
   const supplied = req.body && req.body.token;
   if (authDisabled || (typeof supplied === 'string' && safeEqual(supplied, AUTH_TOKEN))) {
-    loginFailures.delete(ip);
+    loginLimiter.reset(ip);
     res.cookie(SESSION_COOKIE, SESSION_VALUE, { httpOnly: true, sameSite: 'lax', path: '/', secure: req.secure });
     return res.json({ success: true });
   }
-  recordLoginFailure(ip, now);
+  loginLimiter.recordFailure(ip, now);
   res.status(401).json({ error: 'Invalid token' });
 });
 
