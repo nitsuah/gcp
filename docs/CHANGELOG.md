@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Extracted the allowed-host check from server.js into apps/lib/host-allowlist.js with unit tests; no behaviour change.
 - Extracted the login failure limiter from server.js into apps/lib/login-limiter.js with unit tests; no behaviour change.
 - Extracted cookie parsing and constant-time comparison from server.js into apps/lib/http-utils.js with unit tests; no behaviour change.
 - Dependencies: `requirements.txt` sets floors on the transitive `certifi` (>=2026.10.18), `protobuf` (>=5.29.6) and `idna` (>=3.15) so no resolver picks a release with PYSEC-2026-4320, PYSEC-2026-1805 or PYSEC-2026-215; the repo-health workflow uses the shared kit at `a0df883`, whose own lockfile no longer carries the stale `msgpack` advisory.
