@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- CI: pull requests now run the shared risk guard check (`.github/workflows/risk-guard.yml`) (#118).
 - Extracted the allowed-host check from server.js into apps/lib/host-allowlist.js with unit tests; no behaviour change.
 - Extracted the login failure limiter from server.js into apps/lib/login-limiter.js with unit tests; no behaviour change.
 - Extracted cookie parsing and constant-time comparison from server.js into apps/lib/http-utils.js with unit tests; no behaviour change.
